@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="alerts"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Upload Documents</h1>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Add Content to Knowledge Graph</h5>
+                
+                <!-- URL Upload -->
+                <div class="mb-4">
+                    <h6><i class="fas fa-link me-2"></i>Add Web Page</h6>
+                    <form id="url-form">
+                        <div class="mb-3">
+                            <label for="url-input" class="form-label">URL</label>
+                            <input type="url" class="form-control" id="url-input" 
+                                   placeholder="https://example.com/article">
+                            <div class="form-text">Enter a web page URL to extract content</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-download me-2"></i>
+                            Process URL
+                        </button>
+                    </form>
+                </div>
+                
+                <hr>
+                
+                <!-- File Upload -->
+                <div class="mb-4">
+                    <h6><i class="fas fa-file-text me-2"></i>Upload Text File</h6>
+                    <form id="file-form" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file-input" class="form-label">Choose File</label>
+                            <input type="file" class="form-control" id="file-input" 
+                                   accept=".txt" multiple>
+                            <div class="form-text">Upload TXT files (max 100MB total)</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-upload me-2"></i>
+                            Process Files
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- Processing Status -->
+                <div id="processing" class="loading">
+                    <div class="card border-info">
+                        <div class="card-body text-center">
+                            <div class="spinner-border text-info me-3" role="status"></div>
+                            <span id="processing-text">Processing document...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Results -->
+                <div id="results" style="display: none;">
+                    <div class="card border-success">
+                        <div class="card-body">
+                            <h6 class="card-title text-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                Processing Complete
+                            </h6>
+                            <div id="results-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-info-circle text-info me-2"></i>
+                    Processing Info
+                </h5>
+                <p class="card-text">The system will:</p>
+                <ul>
+                    <li>Extract clean text from your content</li>
+                    <li>Split into manageable chunks</li>
+                    <li>Use AI to identify entities and relationships</li>
+                    <li>Store everything in the knowledge graph</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-lightbulb text-warning me-2"></i>
+                    Tips
+                </h5>
+                <ul>
+                    <li>Use well-structured content for best results</li>
+                    <li>Articles, reports, and documentation work great</li>
+                    <li>Processing may take a few minutes for large files</li>
+                    <li>Each document is tracked with source attribution</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Handle URL form submission
+    document.getElementById('url-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = document.getElementById('url-input').value.trim();
+        
+        if (!url) {
+            showAlert('Please enter a URL', 'warning');
+            return;
+        }
+        
+        await processDocument(url, 'URL');
+    });
+
+    // Handle file form submission
+    document.getElementById('file-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fileInput = document.getElementById('file-input');
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+            showAlert('Please select at least one file', 'warning');
+            return;
+        }
+        
+        for (let file of fileInput.files) {
+            await processDocument(file, 'File');
+        }
+    });
+
+    async function processDocument(source, type) {
+        try {
+            // Show processing status
+            document.getElementById('processing').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('processing-text').textContent = `Processing ${type.toLowerCase()}...`;
+            
+            // Prepare form data
+            const formData = new FormData();
+            
+            if (type === 'URL') {
+                formData.append('url', source);
+            } else {
+                formData.append('file', source);
+            }
+            
+            // Send request
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            // Hide processing
+            document.getElementById('processing').style.display = 'none';
+            
+            if (data.success) {
+                // Show success results
+                const stats = data.stats;
+                document.getElementById('results-content').innerHTML = `
+                    <p><strong>Source:</strong> ${type}</p>
+                    <p><strong>Chunks processed:</strong> ${stats.chunks}</p>
+                    <p><strong>Entities extracted:</strong> ${stats.entities}</p>
+                    <p><strong>Relationships found:</strong> ${stats.relationships}</p>
+                `;
+                document.getElementById('results').style.display = 'block';
+                showAlert(data.message, 'success');
+                
+                // Clear forms
+                document.getElementById('url-input').value = '';
+                document.getElementById('file-input').value = '';
+                
+            } else {
+                showAlert(`Error: ${data.error}`, 'danger');
+            }
+            
+        } catch (error) {
+            document.getElementById('processing').style.display = 'none';
+            showAlert(`Error processing ${type.toLowerCase()}: ${error.message}`, 'danger');
+        }
+    }
+</script>
+{% endblock %}

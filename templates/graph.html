@@ -1,0 +1,602 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="alerts"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Interactive Knowledge Graph</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshGraph()">
+                <i class="fas fa-refresh me-2"></i>
+                Refresh
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-info" onclick="centerGraph()">
+                <i class="fas fa-crosshairs me-2"></i>
+                Center
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-success" onclick="exportGraph()">
+                <i class="fas fa-download me-2"></i>
+                Export
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Graph Visualization -->
+    <div class="col-lg-9">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-project-diagram text-primary me-2"></i>
+                    Network Graph
+                    <span id="graph-stats" class="badge bg-secondary ms-2">Loading...</span>
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div id="graph-container">
+                    <svg id="graph-svg" width="100%" height="600"></svg>
+                    <div id="loading-overlay" class="loading-overlay">
+                        <div class="spinner-border text-primary me-3" role="status"></div>
+                        <span>Loading knowledge graph...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Controls Panel -->
+    <div class="col-lg-3">
+        <!-- Search -->
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="card-title">
+                    <i class="fas fa-search text-info me-2"></i>
+                    Search
+                </h6>
+                <div class="mb-2">
+                    <input type="text" class="form-control form-control-sm" id="search-input" 
+                           placeholder="Search entities...">
+                </div>
+                <button class="btn btn-info btn-sm w-100" onclick="searchGraph()">
+                    <i class="fas fa-search me-2"></i>Search
+                </button>
+            </div>
+        </div>
+        
+        <!-- Entity Filters -->
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="card-title">
+                    <i class="fas fa-filter text-warning me-2"></i>
+                    Entity Filters
+                </h6>
+                <div class="form-check mb-2">
+                    <input class="form-check-input entity-filter" type="checkbox" 
+                           value="Person" id="filter-person" checked>
+                    <label class="form-check-label" for="filter-person">
+                        <span class="badge badge-person me-2"></span>Person
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input entity-filter" type="checkbox" 
+                           value="Organization" id="filter-organization" checked>
+                    <label class="form-check-label" for="filter-organization">
+                        <span class="badge badge-organization me-2"></span>Organization
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input entity-filter" type="checkbox" 
+                           value="Location" id="filter-location" checked>
+                    <label class="form-check-label" for="filter-location">
+                        <span class="badge badge-location me-2"></span>Location
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input entity-filter" type="checkbox" 
+                           value="Product" id="filter-product" checked>
+                    <label class="form-check-label" for="filter-product">
+                        <span class="badge badge-product me-2"></span>Product
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input entity-filter" type="checkbox" 
+                           value="Concept" id="filter-concept" checked>
+                    <label class="form-check-label" for="filter-concept">
+                        <span class="badge badge-concept me-2"></span>Concept
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Node Details -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">
+                    <i class="fas fa-info-circle text-success me-2"></i>
+                    Node Details
+                </h6>
+                <div id="node-details">
+                    <p class="text-muted">Click on a node to see details</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instructions -->
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-body">
+                <h6 class="card-title">
+                    <i class="fas fa-question-circle text-info me-2"></i>
+                    How to Use the Graph
+                </h6>
+                <div class="row">
+                    <div class="col-md-3">
+                        <ul class="small">
+                            <li><strong>Drag</strong> nodes to rearrange</li>
+                            <li><strong>Scroll</strong> to zoom in/out</li>
+                            <li><strong>Click</strong> nodes for details</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-3">
+                        <ul class="small">
+                            <li><strong>Search</strong> to find entities</li>
+                            <li><strong>Filter</strong> by entity type</li>
+                            <li><strong>Hover</strong> for quick info</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center">
+                            <span class="me-3"><span class="badge badge-person me-1"></span>Person</span>
+                            <span class="me-3"><span class="badge badge-organization me-1"></span>Organization</span>
+                            <span class="me-3"><span class="badge badge-location me-1"></span>Location</span>
+                            <span class="me-3"><span class="badge badge-product me-1"></span>Product</span>
+                            <span><span class="badge badge-concept me-1"></span>Concept</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Graph container styles */
+#graph-container {
+    position: relative;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    overflow: hidden;
+}
+
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+/* Node type colors */
+.badge-person { background-color: #28a745; }
+.badge-organization { background-color: #007bff; }
+.badge-location { background-color: #ffc107; }
+.badge-product { background-color: #dc3545; }
+.badge-concept { background-color: #6f42c1; }
+
+/* Graph elements */
+.node {
+    cursor: pointer;
+    stroke: #fff;
+    stroke-width: 2px;
+    transition: all 0.3s;
+}
+
+.node:hover {
+    stroke-width: 4px;
+    stroke: #333;
+}
+
+.node.highlighted {
+    stroke: #ff6b35;
+    stroke-width: 4px;
+}
+
+.link {
+    stroke: #999;
+    stroke-opacity: 0.7;
+    stroke-width: 2px;
+}
+
+.link.highlighted {
+    stroke: #ff6b35;
+    stroke-opacity: 1;
+    stroke-width: 3px;
+}
+
+.node-label {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+    fill: #333;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.link-label {
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    fill: #666;
+    text-anchor: middle;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.link:hover + .link-label,
+.link.highlighted + .link-label {
+    opacity: 1;
+}
+
+/* Tooltip */
+.tooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 1000;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// Global variables
+let graphData = { nodes: [], links: [] };
+let svg, g, simulation;
+let width, height;
+let tooltip;
+
+// Color scale for entity types
+const colorScale = {
+    'Person': '#28a745',
+    'Organization': '#007bff', 
+    'Location': '#ffc107',
+    'Product': '#dc3545',
+    'Concept': '#6f42c1',
+    'Unknown': '#6c757d'
+};
+
+// Initialize the graph when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    initializeGraph();
+    loadGraphData();
+    
+    // Add event listeners
+    document.querySelectorAll('.entity-filter').forEach(checkbox => {
+        checkbox.addEventListener('change', applyFilters);
+    });
+});
+
+function initializeGraph() {
+    const container = document.getElementById('graph-container');
+    width = container.clientWidth;
+    height = 600;
+    
+    svg = d3.select('#graph-svg')
+        .attr('width', width)
+        .attr('height', height);
+    
+    // Create zoom behavior
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 3])
+        .on('zoom', (event) => {
+            g.attr('transform', event.transform);
+        });
+    
+    svg.call(zoom);
+    
+    // Create main group
+    g = svg.append('g');
+    
+    // Create tooltip
+    tooltip = d3.select('body').append('div')
+        .attr('class', 'tooltip')
+        .style('opacity', 0);
+    
+    // Initialize simulation
+    simulation = d3.forceSimulation()
+        .force('link', d3.forceLink().id(d => d.id).distance(100))
+        .force('charge', d3.forceManyBody().strength(-300))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius(30));
+}
+
+async function loadGraphData() {
+    try {
+        showLoadingOverlay(true);
+        
+        const response = await fetch('/api/graph-data');
+        const data = await response.json();
+        
+        if (data.success) {
+            graphData = data;
+            updateGraphStats(data.stats);
+            renderGraph();
+        } else {
+            showAlert(`Error: ${data.error}`, 'danger');
+        }
+    } catch (error) {
+        showAlert(`Error loading graph: ${error.message}`, 'danger');
+    } finally {
+        showLoadingOverlay(false);
+    }
+}
+
+function renderGraph() {
+    // Clear existing elements
+    g.selectAll('*').remove();
+    
+    const { nodes, links } = getFilteredData();
+    
+    if (nodes.length === 0) {
+        showNoDataMessage();
+        return;
+    }
+    
+    // Create links
+    const link = g.append('g')
+        .selectAll('.link')
+        .data(links)
+        .enter().append('line')
+        .attr('class', 'link')
+        .attr('stroke-width', 2);
+    
+    // Create nodes
+    const node = g.append('g')
+        .selectAll('.node')
+        .data(nodes)
+        .enter().append('circle')
+        .attr('class', 'node')
+        .attr('r', d => Math.min(20, Math.max(8, Math.sqrt(d.connections || 1) * 3)))
+        .attr('fill', d => colorScale[d.type] || colorScale['Unknown'])
+        .call(d3.drag()
+            .on('start', dragStarted)
+            .on('drag', dragged)
+            .on('end', dragEnded))
+        .on('click', showNodeDetails)
+        .on('mouseover', showTooltip)
+        .on('mouseout', hideTooltip);
+    
+    // Create labels
+    const label = g.append('g')
+        .selectAll('.node-label')
+        .data(nodes)
+        .enter().append('text')
+        .attr('class', 'node-label')
+        .text(d => d.name.length > 15 ? d.name.substring(0, 12) + '...' : d.name);
+    
+    // Update simulation
+    simulation.nodes(nodes);
+    simulation.force('link').links(links);
+    
+    simulation.on('tick', () => {
+        link
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+            
+        node
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y);
+            
+        label
+            .attr('x', d => d.x)
+            .attr('y', d => d.y + 5);
+    });
+    
+    simulation.alpha(1).restart();
+}
+
+function getFilteredData() {
+    const activeTypes = Array.from(document.querySelectorAll('.entity-filter:checked'))
+        .map(cb => cb.value);
+    
+    const filteredNodes = graphData.nodes.filter(node => 
+        activeTypes.includes(node.type)
+    );
+    
+    const nodeIds = new Set(filteredNodes.map(n => n.id));
+    const filteredLinks = graphData.links.filter(link => 
+        nodeIds.has(link.source.id || link.source) && 
+        nodeIds.has(link.target.id || link.target)
+    );
+    
+    // Calculate connections for node sizing
+    filteredNodes.forEach(node => {
+        node.connections = filteredLinks.filter(link => 
+            (link.source.id || link.source) === node.id || 
+            (link.target.id || link.target) === node.id
+        ).length;
+    });
+    
+    return { nodes: filteredNodes, links: filteredLinks };
+}
+
+function applyFilters() {
+    renderGraph();
+}
+
+function searchGraph() {
+    const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
+    
+    if (!searchTerm) {
+        // Clear highlights
+        g.selectAll('.node').classed('highlighted', false);
+        g.selectAll('.link').classed('highlighted', false);
+        return;
+    }
+    
+    // Highlight matching nodes
+    g.selectAll('.node').classed('highlighted', function(d) {
+        return d.name.toLowerCase().includes(searchTerm) || 
+               d.description.toLowerCase().includes(searchTerm);
+    });
+    
+    // Highlight connected links
+    const highlightedNodes = new Set();
+    g.selectAll('.node.highlighted').each(function(d) {
+        highlightedNodes.add(d.id);
+    });
+    
+    g.selectAll('.link').classed('highlighted', function(d) {
+        return highlightedNodes.has(d.source.id || d.source) || 
+               highlightedNodes.has(d.target.id || d.target);
+    });
+}
+
+function showNodeDetails(event, d) {
+    const detailsDiv = document.getElementById('node-details');
+    
+    let connectionsHtml = '';
+    const connections = graphData.links.filter(link => 
+        (link.source.id || link.source) === d.id || 
+        (link.target.id || link.target) === d.id
+    );
+    
+    if (connections.length > 0) {
+        connectionsHtml = '<h6 class="mt-3">Connections:</h6><ul class="small">';
+        connections.slice(0, 5).forEach(link => {
+            const isSource = (link.source.id || link.source) === d.id;
+            const otherNode = isSource ? 
+                graphData.nodes.find(n => n.id === (link.target.id || link.target)) :
+                graphData.nodes.find(n => n.id === (link.source.id || link.source));
+            
+            if (otherNode) {
+                connectionsHtml += `<li>${isSource ? '' : '← '}${link.relationship.replace(/_/g, ' ')} ${isSource ? '→ ' : ''}${otherNode.name}</li>`;
+            }
+        });
+        if (connections.length > 5) {
+            connectionsHtml += `<li><em>... and ${connections.length - 5} more</em></li>`;
+        }
+        connectionsHtml += '</ul>';
+    }
+    
+    detailsDiv.innerHTML = `
+        <div class="border-start border-4 ps-3" style="border-color: ${colorScale[d.type]} !important;">
+            <h6>${d.name}</h6>
+            <span class="badge mb-2" style="background-color: ${colorScale[d.type]}">${d.type}</span>
+            <p class="small text-muted">${d.description}</p>
+            ${connectionsHtml}
+        </div>
+    `;
+}
+
+function showTooltip(event, d) {
+    tooltip.transition().duration(200).style('opacity', 0.9);
+    tooltip.html(`<strong>${d.name}</strong><br/>${d.type}<br/>${d.description}`)
+        .style('left', (event.pageX + 10) + 'px')
+        .style('top', (event.pageY - 28) + 'px');
+}
+
+function hideTooltip() {
+    tooltip.transition().duration(500).style('opacity', 0);
+}
+
+function dragStarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+}
+
+function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+}
+
+function dragEnded(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+}
+
+function refreshGraph() {
+    loadGraphData();
+}
+
+function centerGraph() {
+    svg.transition().duration(750).call(
+        d3.zoom().transform,
+        d3.zoomIdentity.translate(width / 2, height / 2).scale(1)
+    );
+}
+
+function exportGraph() {
+    // Simple export functionality - could be enhanced
+    const svgElement = document.getElementById('graph-svg');
+    const svgData = new XMLSerializer().serializeToString(svgElement);
+    const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+    const svgUrl = URL.createObjectURL(svgBlob);
+    
+    const downloadLink = document.createElement('a');
+    downloadLink.href = svgUrl;
+    downloadLink.download = 'knowledge-graph.svg';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+}
+
+function updateGraphStats(stats) {
+    document.getElementById('graph-stats').textContent = 
+        `${stats.node_count} nodes, ${stats.link_count} links`;
+}
+
+function showLoadingOverlay(show) {
+    document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+}
+
+function showNoDataMessage() {
+    g.append('text')
+        .attr('x', width / 2)
+        .attr('y', height / 2)
+        .attr('text-anchor', 'middle')
+        .attr('class', 'text-muted')
+        .style('font-size', '18px')
+        .text('No data matches current filters');
+}
+
+// Handle window resize
+window.addEventListener('resize', function() {
+    const container = document.getElementById('graph-container');
+    const newWidth = container.clientWidth;
+    
+    if (newWidth !== width) {
+        width = newWidth;
+        svg.attr('width', width);
+        simulation.force('center', d3.forceCenter(width / 2, height / 2));
+        simulation.alpha(0.3).restart();
+    }
+});
+
+// Search on Enter key
+document.getElementById('search-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        searchGraph();
+    }
+});
+</script>
+{% endblock %}

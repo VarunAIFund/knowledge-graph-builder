@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="alerts"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Knowledge Graph Statistics</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshStats()">
+                <i class="fas fa-refresh me-2"></i>
+                Refresh
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearGraph()">
+                <i class="fas fa-trash me-2"></i>
+                Clear Graph
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="stats-loading" class="loading">
+    <div class="card">
+        <div class="card-body text-center">
+            <div class="spinner-border text-primary me-3" role="status"></div>
+            <span>Loading statistics...</span>
+        </div>
+    </div>
+</div>
+
+<div id="stats-content">
+    {% if stats %}
+        <div class="row">
+            <!-- Overview Cards -->
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h2 class="mb-0">{{ stats.total_nodes or 0 }}</h2>
+                                <p class="mb-0">Total Entities</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-circle fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h2 class="mb-0">{{ stats.total_relationships or 0 }}</h2>
+                                <p class="mb-0">Total Relationships</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-arrow-right fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h2 class="mb-0">{{ stats.node_counts|length or 0 }}</h2>
+                                <p class="mb-0">Entity Types</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-tags fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card bg-warning text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h2 class="mb-0">{{ stats.relationship_types|length or 0 }}</h2>
+                                <p class="mb-0">Relationship Types</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-project-diagram fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- Entity Types -->
+            <div class="col-lg-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-pie me-2"></i>
+                            Entities by Type
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if stats.node_counts %}
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Count</th>
+                                            <th>Percentage</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for type, count in stats.node_counts.items() %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-primary">{{ type }}</span>
+                                            </td>
+                                            <td>{{ count }}</td>
+                                            <td>
+                                                {% set percentage = (count / stats.total_nodes * 100) | round(1) %}
+                                                <div class="progress" style="height: 20px;">
+                                                    <div class="progress-bar" role="progressbar" 
+                                                         style="width: {{ percentage }}%">
+                                                        {{ percentage }}%
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-muted">No entities in the graph yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Relationship Types -->
+            <div class="col-lg-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-bar me-2"></i>
+                            Top Relationships
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if stats.relationship_types %}
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Relationship</th>
+                                            <th>Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for rel in stats.relationship_types[:10] %}
+                                        <tr>
+                                            <td>
+                                                <code>{{ rel.relationship_type.replace('_', ' ').title() }}</code>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-success">{{ rel.count }}</span>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-muted">No relationships in the graph yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    {% else %}
+        <div class="card">
+            <div class="card-body text-center">
+                <h5>No Data Available</h5>
+                <p class="text-muted">Upload some documents first to see statistics.</p>
+                <a href="{{ url_for('upload_page') }}" class="btn btn-primary">
+                    <i class="fas fa-upload me-2"></i>
+                    Upload Documents
+                </a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Neo4j Browser Access -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-external-link-alt me-2"></i>
+                    Graph Visualization
+                </h5>
+            </div>
+            <div class="card-body">
+                <p>Access the Neo4j Browser for advanced graph exploration and visualization:</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Connection Details:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>URI:</strong> <code>{{ "neo4j+s://2fc45ea3.databases.neo4j.io" }}</code></li>
+                            <li><strong>Username:</strong> <code>neo4j</code></li>
+                            <li><strong>Database:</strong> <code>neo4j</code></li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Sample Cypher Queries:</h6>
+                        <ul class="small">
+                            <li><code>MATCH (n) RETURN n LIMIT 25</code></li>
+                            <li><code>MATCH (p:Person) RETURN p</code></li>
+                            <li><code>MATCH (n)-[r]-(m) RETURN n,r,m LIMIT 50</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <a href="https://console.neo4j.io" target="_blank" class="btn btn-info">
+                    <i class="fas fa-external-link-alt me-2"></i>
+                    Open Neo4j Browser
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function refreshStats() {
+        try {
+            showLoading('stats-loading');
+            const response = await fetch('/api/stats');
+            const data = await response.json();
+            
+            if (data.success) {
+                location.reload(); // Simple refresh for now
+            } else {
+                showAlert(`Error: ${data.error}`, 'danger');
+            }
+        } catch (error) {
+            showAlert(`Error refreshing stats: ${error.message}`, 'danger');
+        } finally {
+            hideLoading('stats-loading');
+        }
+    }
+
+    async function clearGraph() {
+        if (!confirm('Are you sure you want to clear all data from the graph? This action cannot be undone.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/clear', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                showAlert('Graph cleared successfully', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                showAlert(`Error: ${data.error}`, 'danger');
+            }
+        } catch (error) {
+            showAlert(`Error clearing graph: ${error.message}`, 'danger');
+        }
+    }
+</script>
+{% endblock %}

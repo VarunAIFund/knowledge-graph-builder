@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="alerts"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Query Knowledge Graph</h1>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Ask a Question</h5>
+                <form id="query-form">
+                    <div class="mb-3">
+                        <label for="question-input" class="form-label">Your Question</label>
+                        <textarea class="form-control" id="question-input" rows="3" 
+                                  placeholder="What would you like to know about the content in your knowledge graph?"></textarea>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-2"></i>
+                            Ask Question
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="clearQuery()">
+                            <i class="fas fa-eraser me-2"></i>
+                            Clear
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Query Processing -->
+        <div id="query-processing" class="loading">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <div class="spinner-border text-info me-3" role="status"></div>
+                    <span>Processing your question...</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Query Results -->
+        <div id="query-results" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-lightbulb text-warning me-2"></i>
+                        Answer
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="answer-content"></div>
+                    
+                    <!-- Show context details -->
+                    <div class="mt-4">
+                        <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse" 
+                                data-bs-target="#context-details">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Show Context Details
+                        </button>
+                    </div>
+                    
+                    <div class="collapse mt-3" id="context-details">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h6>Entities Found</h6>
+                                <div id="entities-list"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>Key Relationships</h6>
+                                <div id="relationships-list"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>Connection Paths</h6>
+                                <div id="paths-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-magic text-primary me-2"></i>
+                    Suggested Questions
+                </h5>
+                <div id="suggestions-list">
+                    {% if suggestions %}
+                        {% for suggestion in suggestions %}
+                        <button class="btn btn-outline-primary btn-sm mb-2 suggestion-btn" 
+                                onclick="useSuggestion('{{ suggestion }}')">
+                            {{ suggestion }}
+                        </button>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">Upload some documents first to see suggestions</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-search text-info me-2"></i>
+                    Entity Search
+                </h5>
+                <form id="search-form">
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="search-input" 
+                               placeholder="Search for entities...">
+                    </div>
+                    <button type="submit" class="btn btn-info btn-sm">
+                        <i class="fas fa-search me-2"></i>
+                        Search
+                    </button>
+                </form>
+                <div id="search-results" class="mt-3"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-question-circle text-success me-2"></i>
+                    Query Tips
+                </h5>
+                <ul class="small">
+                    <li>Ask about specific people, organizations, or concepts</li>
+                    <li>Try questions like "Who works for...?" or "What is...?"</li>
+                    <li>Ask about relationships between entities</li>
+                    <li>Request summaries or explanations of topics</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Handle query form submission
+    document.getElementById('query-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const question = document.getElementById('question-input').value.trim();
+        
+        if (!question) {
+            showAlert('Please enter a question', 'warning');
+            return;
+        }
+        
+        await processQuery(question);
+    });
+
+    // Handle entity search
+    document.getElementById('search-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const query = document.getElementById('search-input').value.trim();
+        
+        if (!query) {
+            showAlert('Please enter a search term', 'warning');
+            return;
+        }
+        
+        await searchEntities(query);
+    });
+
+    async function processQuery(question) {
+        try {
+            // Show processing
+            document.getElementById('query-processing').style.display = 'block';
+            document.getElementById('query-results').style.display = 'none';
+            
+            // Send query
+            const response = await fetch('/api/query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ question: question })
+            });
+            
+            const data = await response.json();
+            
+            // Hide processing
+            document.getElementById('query-processing').style.display = 'none';
+            
+            if (data.success) {
+                const result = data.result;
+                
+                // Display answer
+                document.getElementById('answer-content').innerHTML = `
+                    <div class="alert alert-light border">
+                        <strong>Question:</strong> ${result.question}
+                    </div>
+                    <div class="answer-text">
+                        ${result.answer.replace(/\n/g, '<br>')}
+                    </div>
+                `;
+                
+                // Display context details
+                displayContextDetails(result.context);
+                
+                document.getElementById('query-results').style.display = 'block';
+                
+            } else {
+                showAlert(`Error: ${data.error}`, 'danger');
+            }
+            
+        } catch (error) {
+            document.getElementById('query-processing').style.display = 'none';
+            showAlert(`Error processing query: ${error.message}`, 'danger');
+        }
+    }
+
+    async function searchEntities(query) {
+        try {
+            const response = await fetch('/api/search', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query: query })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const results = data.results;
+                const resultsHtml = results.map(entity => `
+                    <div class="border-bottom py-2">
+                        <strong>${entity.name}</strong> <span class="badge bg-secondary">${entity.type}</span>
+                        <br><small class="text-muted">${entity.description || 'No description'}</small>
+                    </div>
+                `).join('');
+                
+                document.getElementById('search-results').innerHTML = 
+                    results.length > 0 ? resultsHtml : '<p class="text-muted">No entities found</p>';
+                    
+            } else {
+                showAlert(`Search error: ${data.error}`, 'danger');
+            }
+            
+        } catch (error) {
+            showAlert(`Search error: ${error.message}`, 'danger');
+        }
+    }
+
+    function displayContextDetails(context) {
+        // Display entities
+        const entitiesHtml = context.entities?.slice(0, 5).map(entity => `
+            <div class="small border-bottom py-1">
+                <strong>${entity.name}</strong> <span class="badge bg-light text-dark">${entity.type}</span>
+            </div>
+        `).join('') || '<p class="text-muted small">No entities</p>';
+        
+        document.getElementById('entities-list').innerHTML = entitiesHtml;
+        
+        // Display relationships
+        const relationshipsHtml = context.relationships?.slice(0, 5).map(rel => `
+            <div class="small border-bottom py-1">
+                ${rel.entity} → ${rel.relationship} → ${rel.connected_entity}
+            </div>
+        `).join('') || '<p class="text-muted small">No relationships</p>';
+        
+        document.getElementById('relationships-list').innerHTML = relationshipsHtml;
+        
+        // Display paths
+        const pathsHtml = context.paths?.slice(0, 3).map(path => `
+            <div class="small border-bottom py-1">
+                ${path.nodes.join(' → ')} <span class="badge bg-info">${path.length}</span>
+            </div>
+        `).join('') || '<p class="text-muted small">No paths</p>';
+        
+        document.getElementById('paths-list').innerHTML = pathsHtml;
+    }
+
+    function useSuggestion(suggestion) {
+        document.getElementById('question-input').value = suggestion;
+        document.getElementById('question-input').focus();
+    }
+
+    function clearQuery() {
+        document.getElementById('question-input').value = '';
+        document.getElementById('query-results').style.display = 'none';
+    }
+</script>
+{% endblock %}

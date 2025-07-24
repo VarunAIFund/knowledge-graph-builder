@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="alerts"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Knowledge Graph Builder</h1>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-info-circle text-primary me-2"></i>
+                    Welcome to Knowledge Graph Builder
+                </h5>
+                <p class="card-text">
+                    This system converts documents and web pages into an interactive knowledge graph using Neo4j and OpenAI GPT.
+                    Extract entities, relationships, and answer natural language questions about your content.
+                </p>
+                
+                <h6 class="mt-4">How it works:</h6>
+                <ol class="list-group list-group-numbered list-group-flush">
+                    <li class="list-group-item">
+                        <strong>Upload Documents:</strong> Add TXT files or URLs (up to 100MB total)
+                    </li>
+                    <li class="list-group-item">
+                        <strong>Knowledge Extraction:</strong> AI extracts entities and relationships
+                    </li>
+                    <li class="list-group-item">
+                        <strong>Graph Storage:</strong> Data is stored in Neo4j AuraDB
+                    </li>
+                    <li class="list-group-item">
+                        <strong>Query & Explore:</strong> Ask natural language questions
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-rocket text-success me-2"></i>
+                    Quick Start
+                </h5>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('upload_page') }}" class="btn btn-primary">
+                        <i class="fas fa-upload me-2"></i>
+                        Upload Your First Document
+                    </a>
+                    <a href="{{ url_for('graph_page') }}" class="btn btn-success">
+                        <i class="fas fa-project-diagram me-2"></i>
+                        View Knowledge Graph
+                    </a>
+                    <a href="{{ url_for('query_page') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-search me-2"></i>
+                        Explore Knowledge
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-chart-line text-info me-2"></i>
+                    Graph Statistics
+                </h5>
+                <div id="stats-loading" class="loading">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    Loading...
+                </div>
+                <div id="stats-content">
+                    <!-- Stats will be loaded here -->
+                </div>
+                <a href="{{ url_for('stats_page') }}" class="btn btn-sm btn-outline-info mt-2">
+                    View Details
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-cogs text-warning me-2"></i>
+                    System Features
+                </h5>
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-file-text me-2"></i>Document Processing</h6>
+                        <ul>
+                            <li>TXT files and web URLs</li>
+                            <li>Automatic text chunking</li>
+                            <li>Source tracking</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-brain me-2"></i>AI Extraction</h6>
+                        <ul>
+                            <li>Entity recognition</li>
+                            <li>Relationship detection</li>
+                            <li>GPT-3.5 powered</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-database me-2"></i>Graph Database</h6>
+                        <ul>
+                            <li>Neo4j AuraDB</li>
+                            <li>Full-text search</li>
+                            <li>Path finding</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Load graph statistics
+    async function loadStats() {
+        try {
+            showLoading('stats-loading');
+            const response = await fetch('/api/stats');
+            const data = await response.json();
+            
+            if (data.success) {
+                const stats = data.stats;
+                const totalNodes = stats.total_nodes || 0;
+                const totalRels = stats.total_relationships || 0;
+                
+                document.getElementById('stats-content').innerHTML = `
+                    <p class="mb-1"><strong>Entities:</strong> ${totalNodes}</p>
+                    <p class="mb-0"><strong>Relationships:</strong> ${totalRels}</p>
+                `;
+            } else {
+                document.getElementById('stats-content').innerHTML = '<p class="text-muted">No data available</p>';
+            }
+        } catch (error) {
+            document.getElementById('stats-content').innerHTML = '<p class="text-danger">Error loading stats</p>';
+        } finally {
+            hideLoading('stats-loading');
+        }
+    }
+
+    // Load stats on page load
+    document.addEventListener('DOMContentLoaded', loadStats);
+</script>
+{% endblock %}
