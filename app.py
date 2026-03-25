@@ -1,3 +1,27 @@
+"""
+Knowledge Graph Builder - Flask Web Application
+
+Exposes a browser-based interface and a JSON REST API for ingesting documents
+(plain-text files or web URLs), extracting entities and relationships via
+OpenAI GPT, storing the resulting graph in Neo4j AuraDB, and answering
+natural-language questions against that graph.
+
+Routes
+------
+GET  /              Home page
+GET  /upload        Document upload page
+GET  /query         Query interface page
+GET  /graph         Interactive graph visualization page
+GET  /stats         Graph statistics page
+
+POST /api/upload    Ingest a document (multipart file or URL form field)
+POST /api/query     Answer a natural-language question
+POST /api/search    Full-text entity search
+GET  /api/stats     Graph statistics (JSON)
+GET  /api/graph-data  Nodes and links for D3 visualization
+POST /api/clear     Delete all graph data
+"""
+
 import os
 import logging
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for

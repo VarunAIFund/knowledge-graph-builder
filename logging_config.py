@@ -4,10 +4,23 @@ import os
 from datetime import datetime
 
 def setup_logging():
-    """Configure comprehensive logging for the application"""
-    
-    # Create logs directory if it doesn't exist
-    log_dir = 'logs'
+    """Configure comprehensive logging for the application.
+
+    Creates a ``logs/`` directory adjacent to this file (if it does not
+    already exist) and attaches three rotating file handlers to the root
+    logger:
+
+    * ``knowledge_graph.log`` — all events at DEBUG level and above
+    * ``errors.log``          — ERROR level and above only
+    * ``api_calls.log``       — OpenAI / Neo4j call audit trail
+
+    A console handler at INFO level is also attached so that output is
+    visible when running interactively.
+    """
+
+    # Place the logs directory next to this source file so the location is
+    # predictable regardless of the working directory the app is started from.
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
     os.makedirs(log_dir, exist_ok=True)
     
     # Configure root logger

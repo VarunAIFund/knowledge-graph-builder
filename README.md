@@ -1,221 +1,405 @@
 # Knowledge Graph Builder
 
-Convert documents and web pages into an interactive knowledge graph using Neo4j AuraDB and OpenAI GPT. Extract entities, relationships, and answer natural language questions about your content.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat-square&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--3.5-412991?style=flat-square&logo=openai&logoColor=white)](https://openai.com/)
+[![Neo4j](https://img.shields.io/badge/Neo4j-AuraDB-008CC1?style=flat-square&logo=neo4j&logoColor=white)](https://neo4j.com/cloud/aura/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+
+**Turn any document or web page into a queryable knowledge graph — in seconds.**
+
+Feed the app a plain-text file or a URL and it uses GPT to extract every entity and relationship it can find, stores them in Neo4j AuraDB, and lets you explore or query the graph through a clean browser UI or a command-line interface.
+
+---
+
+## Table of Contents
+
+- [What It Does](#what-it-does)
+- [Architecture](#architecture)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Setup](#setup)
+- [Usage](#usage)
+- [API Reference](#api-reference)
+- [Configuration](#configuration)
+- [Project Structure](#project-structure)
+- [Limitations](#limitations)
+
+---
+
+## What It Does
+
+Most information is locked inside unstructured text. This project extracts that structure automatically:
+
+1. **Ingest** — paste in a URL or upload a `.txt` file.
+2. **Extract** — GPT-3.5 reads each chunk and identifies entities (people, organizations, locations, products, concepts) and the relationships between them.
+3. **Store** — entities and relationships are merged, deduplicated, and written to Neo4j as a property graph.
+4. **Query** — ask a natural-language question; the app retrieves relevant graph context and uses GPT to synthesize a grounded answer.
+5. **Explore** — view the live graph in an interactive D3 force-directed visualization or run raw Cypher queries in Neo4j Browser.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Flask Web App                         │
+│   /upload    /query    /graph    /stats    REST API (/api/)  │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+          ┌────────────────┼─────────────────┐
+          │                │                 │
+          ▼                ▼                 ▼
+  ┌───────────────┐ ┌──────────────┐ ┌──────────────────┐
+  │  Document     │ │  Knowledge   │ │  Query Engine    │
+  │  Processor    │ │  Extractor   │ │                  │
+  │               │ │              │ │  NL question     │
+  │  URL / file   │ │  GPT-3.5     │ │  → entity        │
+  │  → clean text │ │  extraction  │ │    extraction    │
+  │  → token      │ │  + merge /   │ │  → graph context │
+  │    chunks     │ │  dedup       │ │  → GPT answer    │
+  └───────┬───────┘ └──────┬───────┘ └────────┬─────────┘
+          │                │                  │
+          └────────────────▼──────────────────┘
+                           │
+                  ┌────────▼────────┐
+                  │  Graph Manager  │
+                  │                 │
+                  │  Neo4j AuraDB   │
+                  │  MERGE / MATCH  │
+                  │  Full-text idx  │
+                  │  Path finding   │
+                  └─────────────────┘
+```
+
+### Data Flow
+
+```
+User input (file / URL)
+        │
+        ▼
+DocumentProcessor.ingest_document()
+  ├─ fetch & clean HTML  (BeautifulSoup)
+  ├─ read plain text
+  └─ chunk by token count (tiktoken, 800 tok / 100 overlap)
+        │
+        ▼  (one API call per chunk)
+KnowledgeExtractor.extract_knowledge()
+  ├─ GPT-3.5 → structured JSON {entities, relationships}
+  ├─ validate schema
+  └─ merge_extractions() — case-insensitive dedup
+        │
+        ▼
+GraphManager.store_in_graph()
+  ├─ MERGE nodes by (type, name)
+  └─ MERGE relationships
+        │
+        ▼
+Neo4j AuraDB  ←─── QueryEngine  ←─── User question (NL)
+                    ├─ GPT extracts key terms
+                    ├─ full-text search + relationship traversal
+                    ├─ shortestPath between entities
+                    └─ GPT synthesizes final answer
+```
+
+---
 
 ## Features
 
-- **Document Processing**: Handle TXT files and web URLs (up to 100MB total)
-- **AI-Powered Extraction**: Use GPT-3.5 to extract entities and relationships
-- **Graph Storage**: Store knowledge in Neo4j AuraDB with full-text search
-- **Natural Language Queries**: Ask questions and get comprehensive answers
-- **Web Interface**: Simple Flask app for easy interaction
-- **Graph Visualization**: Access to Neo4j Browser for exploration
+**Document ingestion**
+- Plain-text file upload (up to 100 MB)
+- Arbitrary web URLs — cleans boilerplate (nav, footer, scripts) with BeautifulSoup
+- Token-aware chunking via tiktoken (no context-window overflows)
 
-## Quick Start
+**Knowledge extraction**
+- Five entity types: Person, Organization, Location, Product, Concept
+- Named relationship types (founded, works_for, located_in, collaborated_with, and more)
+- JSON schema validation on every GPT response
+- Automatic merge and deduplication across chunks
 
-### 1. Install Dependencies
+**Graph storage**
+- Neo4j AuraDB — managed, cloud-hosted property graph
+- Per-type indexes for fast lookup
+- Full-text search index across name and description fields
+- Shortest-path queries between any two entities
+
+**Query interface**
+- Natural-language questions resolved against live graph context
+- Context window built from entity search + relationship traversal + path results
+- Suggested questions auto-generated from available entity types
+
+**Web UI**
+- Bootstrap 5 responsive layout
+- D3.js force-directed graph visualization (nodes colored by entity type, click for details)
+- Upload, query, stats, and graph pages
+
+**CLI**
+- `process <file|url>` — ingest a document
+- `query <question>` — ask a question
+- `stats` — print entity and relationship counts
+- `clear` — wipe the graph
+
+**Operations**
+- Structured logging with rotating file handlers (all events, errors, API audit)
+- Rate-limit delay between OpenAI calls
+- Graceful degradation when services are unavailable
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Web framework | Flask 3.0 |
+| LLM | OpenAI GPT-3.5-turbo |
+| Graph database | Neo4j AuraDB (Bolt protocol) |
+| HTML parsing | BeautifulSoup 4 |
+| Token counting | tiktoken (cl100k_base) |
+| Graph visualization | D3.js (force simulation) |
+| Frontend | Bootstrap 5, Font Awesome 6 |
+| Config / secrets | python-dotenv |
+
+---
+
+## Setup
+
+### Prerequisites
+
+- Python 3.10 or higher
+- A free [Neo4j AuraDB](https://neo4j.com/cloud/aura/) instance
+- An [OpenAI API key](https://platform.openai.com/api-keys)
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/your-username/knowledge-graph-builder.git
+cd knowledge-graph-builder
+```
+
+### 2. Create a virtual environment
+
+```bash
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+### 4. Configure environment variables
 
-The system uses environment variables stored in `.env`. These are already configured:
+Copy the template and fill in your credentials:
 
-- OpenAI API Key
-- Neo4j AuraDB connection details
+```bash
+cp .env.example .env
+```
 
-### 3. Run the Application
+Open `.env` and set the following values:
 
-#### Web Interface (Recommended)
+```env
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Neo4j AuraDB
+NEO4J_URI=neo4j+s://<your-instance-id>.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=<your-password>
+NEO4J_DATABASE=neo4j
+
+# Flask
+FLASK_SECRET_KEY=<generate-a-random-secret-key>
+FLASK_DEBUG=False
+```
+
+To generate a secure Flask secret key:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+> **Note:** `.env` is listed in `.gitignore` and will never be committed. Never hard-code credentials in source files.
+
+### 5. Run the application
+
+**Web interface (recommended):**
+
 ```bash
 python app.py
 ```
-Visit `http://localhost:5000` in your browser.
 
-#### Command Line Interface
+Open [http://localhost:5000](http://localhost:5000) in your browser.
+
+**Command-line interface:**
+
 ```bash
 python main.py
 ```
+
+---
 
 ## Usage
 
 ### Web Interface
 
-1. **Upload Documents**: Go to "Upload Documents" and add TXT files or web URLs
-2. **Query Knowledge**: Go to "Query Knowledge" and ask natural language questions
-3. **View Statistics**: See graph statistics and entity/relationship counts
-4. **Explore Graph**: Access Neo4j Browser for advanced visualization
+1. **Upload** — go to "Upload Documents", paste a URL or upload a `.txt` file, and click Process.
+2. **Query** — go to "Query Knowledge", type a natural-language question, and press Ask.
+3. **Explore** — go to "Graph View" to see an interactive force-directed visualization of every node and edge.
+4. **Stats** — go to "Statistics" for entity and relationship counts broken down by type.
 
-### Command Line
+### Command-Line Interface
 
-```bash
-# Process a document
-> process https://example.com/article.html
-> process /path/to/document.txt
+```
+Knowledge Graph Builder - Command Line Interface
+Commands: process <file/url>, query <question>, stats, clear, quit
 
-# Ask questions
-> query Who are the key people mentioned?
-> query What organizations are discussed?
+> process https://en.wikipedia.org/wiki/SpaceX
+  Success! Processed 12 chunks, extracted 47 entities, 63 relationships
 
-# View statistics
+> process /path/to/report.txt
+  Success! Processed 4 chunks, extracted 18 entities, 22 relationships
+
+> query Who founded SpaceX and what is their background?
+  Q: Who founded SpaceX and what is their background?
+  A: SpaceX was founded by Elon Musk in 2002. Musk previously co-founded
+     PayPal and is also the CEO of Tesla. SpaceX is headquartered in
+     Hawthorne, California...
+
 > stats
+  Entities: 65
+  Relationships: 85
+  Entity types:
+    Person: 14
+    Organization: 22
+    Location: 11
+    Product: 9
+    Concept: 9
 
-# Clear all data
 > clear
-
-# Exit
-> quit
+  Clear all graph data? (y/N): y
+  Graph cleared successfully
 ```
 
-## Architecture
+### Cypher Queries (Neo4j Browser)
 
-### Core Components
+Access the Neo4j Browser at [https://console.neo4j.io](https://console.neo4j.io) and connect with your AuraDB credentials for advanced exploration.
 
-1. **DocumentProcessor** (`document_processor.py`)
-   - Extracts text from files and URLs
-   - Chunks content into manageable segments
-   - Tracks source attribution
+```cypher
+-- All nodes
+MATCH (n) RETURN n LIMIT 50
 
-2. **KnowledgeExtractor** (`knowledge_extractor.py`)
-   - Uses GPT-3.5 to extract entities and relationships
-   - Validates extraction quality
-   - Merges and deduplicates results
+-- All people and their relationships
+MATCH (p:Person)-[r]-(x)
+RETURN p, r, x
 
-3. **GraphManager** (`graph_manager.py`)
-   - Manages Neo4j database operations
-   - Creates and queries graph structures
-   - Provides search and path-finding capabilities
+-- Shortest path between two entities
+MATCH (a {name: "Elon Musk"}), (b {name: "NASA"})
+MATCH path = shortestPath((a)-[*1..5]-(b))
+RETURN path
 
-4. **QueryEngine** (`query_engine.py`)
-   - Processes natural language questions
-   - Retrieves relevant graph context
-   - Generates comprehensive answers using GPT
+-- Full-text search
+CALL db.index.fulltext.queryNodes('entity_search', 'machine learning')
+YIELD node, score
+RETURN node.name, node.description, score
+ORDER BY score DESC
+```
 
-### Entity Types
+---
 
-- **Person**: People mentioned in content
-- **Organization**: Companies, institutions, organizations
-- **Location**: Cities, countries, addresses, places  
-- **Product**: Products, services, technologies
-- **Concept**: Ideas, concepts, topics, fields of study
+## API Reference
 
-### Data Flow
+All endpoints return JSON with a top-level `success` boolean.
 
-1. User uploads document/URL → Text extraction → Chunking
-2. Each chunk → GPT extraction → Structured entities/relationships
-3. Store in Neo4j with source tracking
-4. User asks question → GPT query translation → Neo4j retrieval → GPT answer generation
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/upload` | Ingest a document. Form fields: `file` (multipart) or `url` (string). |
+| `POST` | `/api/query` | Answer a question. JSON body: `{"question": "..."}` |
+| `POST` | `/api/search` | Entity full-text search. JSON body: `{"query": "..."}` |
+| `GET`  | `/api/stats` | Graph statistics (node counts by type, relationship counts). |
+| `GET`  | `/api/graph-data` | All nodes and links for visualization. |
+| `POST` | `/api/clear` | Delete all nodes and relationships. |
+
+**Upload example:**
+
+```bash
+# File upload
+curl -X POST http://localhost:5000/api/upload \
+  -F "file=@report.txt"
+
+# URL
+curl -X POST http://localhost:5000/api/upload \
+  -F "url=https://example.com/article"
+```
+
+**Query example:**
+
+```bash
+curl -X POST http://localhost:5000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What organizations are involved in space exploration?"}'
+```
+
+---
 
 ## Configuration
 
-### Environment Variables
+All settings are loaded from environment variables via `.env`.
 
-- `OPENAI_API_KEY`: OpenAI API key for GPT access
-- `NEO4J_URI`: Neo4j database URI
-- `NEO4J_USERNAME`: Neo4j username
-- `NEO4J_PASSWORD`: Neo4j password
-- `NEO4J_DATABASE`: Neo4j database name
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `OPENAI_API_KEY` | Yes | — | OpenAI API key |
+| `NEO4J_URI` | Yes | — | Bolt URI for Neo4j AuraDB |
+| `NEO4J_USERNAME` | Yes | — | Database username |
+| `NEO4J_PASSWORD` | Yes | — | Database password |
+| `NEO4J_DATABASE` | Yes | — | Database name (usually `neo4j`) |
+| `FLASK_SECRET_KEY` | Yes | (weak dev default) | Flask session signing key — **set this in production** |
+| `FLASK_DEBUG` | No | `False` | Enable Flask debug mode |
 
-### Settings
+Chunking parameters are set in `config.py`:
 
-- `CHUNK_SIZE`: Token size for document chunks (default: 1500)
-- `CHUNK_OVERLAP`: Overlap between chunks (default: 200)
-- `MAX_FILE_SIZE`: Maximum file size in bytes (default: 100MB)
+| Setting | Default | Description |
+|---|---|---|
+| `CHUNK_SIZE` | 800 tokens | Maximum tokens per document chunk |
+| `CHUNK_OVERLAP` | 100 tokens | Token overlap between consecutive chunks |
+| `MAX_FILE_SIZE` | 100 MB | Maximum accepted file or page size |
 
-## Neo4j Browser Access
+---
 
-Access advanced graph visualization at: https://console.neo4j.io
-
-**Connection Details:**
-- URI: Use `NEO4J_URI` from your `.env` file
-- Username: Use `NEO4J_USERNAME` from your `.env` file  
-- Database: Use `NEO4J_DATABASE` from your `.env` file
-- Password: Use `NEO4J_PASSWORD` from your `.env` file
-
-**Note:** All connection details are stored securely in environment variables.
-
-**Sample Queries:**
-```cypher
-// Show all entities
-MATCH (n) RETURN n LIMIT 25
-
-// Show all people
-MATCH (p:Person) RETURN p
-
-// Show relationships
-MATCH (n)-[r]-(m) RETURN n,r,m LIMIT 50
-
-// Search entities by name
-CALL db.index.fulltext.queryNodes('entity_search', 'search_term')
-YIELD node, score RETURN node, score
-```
-
-## Error Handling
-
-The system includes comprehensive error handling:
-
-- **Rate Limiting**: Automatic delays between API calls
-- **Logging**: Detailed logs in the `logs/` directory
-- **Validation**: Input validation and extraction quality checks
-- **Recovery**: Graceful degradation when services are unavailable
-
-## Logging
-
-Logs are stored in the `logs/` directory:
-
-- `knowledge_graph.log`: All system events
-- `errors.log`: Error-specific logs
-- `api_calls.log`: API usage monitoring
-
-## Limitations
-
-- Currently supports only TXT files and web pages
-- Uses GPT-3.5-turbo (upgrade to GPT-4 for better extraction)
-- Neo4j AuraDB free tier limits: 200K nodes, 400K relationships
-- Rate limited by OpenAI API quotas
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection Errors**: Check your internet connection and API keys
-2. **Large Files**: Ensure files are under 100MB
-3. **Processing Errors**: Check logs for detailed error messages
-4. **Graph Visualization**: Ensure Neo4j AuraDB instance is running
-
-### Debug Mode
-
-Enable debug logging by setting `FLASK_DEBUG=True` in your environment.
-
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 knowledge-graph-builder/
-├── app.py                 # Flask web application
-├── main.py               # CLI interface
-├── config.py             # Configuration settings
-├── document_processor.py # Document processing
-├── knowledge_extractor.py # AI extraction
-├── graph_manager.py      # Neo4j operations
-├── query_engine.py       # Query processing
-├── logging_config.py     # Logging setup
-├── templates/            # HTML templates
-├── requirements.txt      # Dependencies
-├── .env                  # Environment variables
-└── logs/                 # Log files
+├── app.py                  # Flask application — routes and API endpoints
+├── main.py                 # KnowledgeGraphBuilder class + CLI entry point
+├── config.py               # Centralised configuration (reads from .env)
+├── document_processor.py   # Text extraction (URL / file) and token chunking
+├── knowledge_extractor.py  # GPT-3.5 entity/relationship extraction + dedup
+├── graph_manager.py        # Neo4j CRUD, indexes, search, path finding
+├── query_engine.py         # NL query → graph context → GPT answer pipeline
+├── logging_config.py       # Rotating file handlers, rate limiter, env validator
+├── templates/
+│   ├── base.html           # Shared layout (sidebar, Bootstrap, D3 CDN)
+│   ├── index.html          # Home / dashboard
+│   ├── upload.html         # Document ingestion page
+│   ├── query.html          # Natural-language query page
+│   ├── graph.html          # D3 force-directed visualization
+│   └── stats.html          # Entity and relationship statistics
+├── requirements.txt        # Pinned Python dependencies
+├── .gitignore              # Excludes .env, logs/, venv/, __pycache__, etc.
+└── logs/                   # Created at runtime — not committed
+    ├── knowledge_graph.log
+    ├── errors.log
+    └── api_calls.log
 ```
 
-### Adding New Features
+---
 
-1. **New Entity Types**: Update the extraction prompt and validation
-2. **File Formats**: Extend DocumentProcessor for new formats
-3. **Query Types**: Enhance QueryEngine with specialized query handlers
-4. **Visualizations**: Add new chart types to the web interface
+## Limitations
 
-## License
-
-This project is for educational and demonstration purposes.
+- **File formats:** only plain text (`.txt`) and web pages are supported. PDF, DOCX, and other binary formats are not yet handled.
+- **Model:** uses GPT-3.5-turbo by default. Upgrading to GPT-4 in `knowledge_extractor.py` and `query_engine.py` improves extraction quality on complex or technical text.
+- **Neo4j AuraDB free tier:** capped at 200,000 nodes and 400,000 relationships.
+- **Rate limiting:** a fixed 1-second delay is applied between OpenAI API calls. High-volume ingestion will be slow; consider batching or async processing for production use.
+- **Concurrency:** global component references in `app.py` are not thread-safe. Use a single worker (`--workers 1`) when deploying behind gunicorn, or refactor to use `g` / application context.
