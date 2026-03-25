@@ -300,3 +300,6 @@ backend/.env
 # SECURITY NOTE: Always verify no sensitive data is committed!
 # Review: API keys, passwords, database URLs, certificates
 # =============================================================================
+
+
+backend/index.json

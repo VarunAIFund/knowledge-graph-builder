@@ -24,7 +24,7 @@ interface Props {
 export default function FileDetails({ file, onClose }: Props) {
   const color = FILE_TYPE_COLORS[file.type] ?? "#64748B";
   const Icon = TYPE_ICONS[file.type] ?? File;
-  const modDate = file.modified ? new Date(file.modified) : null;
+  const modDate = file.modified ? new Date(parseFloat(file.modified) * 1000) : null;
 
   const openFile = () => {
     // Open file via API (server-side open command)

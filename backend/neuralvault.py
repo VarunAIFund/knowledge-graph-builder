@@ -4,6 +4,7 @@ Supports: text, code, images, PDFs, audio, video via gemini-embedding-2-preview
 """
 
 import os
+import json
 import subprocess
 from pathlib import Path
 import mimetypes
@@ -83,8 +84,34 @@ def get_file_type(ext: str) -> str:
 
 # ── Desktop scanner ────────────────────────────────────────────────────────────
 DESKTOP = Path(os.environ.get("DESKTOP_PATH", Path.home() / "Desktop"))
-SCAN_DEPTH = int(os.environ.get("SCAN_DEPTH", "1"))
+SCAN_DEPTH = int(os.environ.get("SCAN_DEPTH", "3"))
 MAX_FILE_MB = 100
+
+# Folders to skip entirely
+SKIP_DIRS = {
+    "node_modules", ".git", "__pycache__", ".venv", "venv", "env",
+    "dist", "build", ".next", ".cache", "vendor", ".tox", "coverage",
+}
+
+# File extensions to skip (code, config, dev files)
+SKIP_EXTS = {
+    "py", "js", "ts", "jsx", "tsx", "rb", "go", "rs", "java", "cpp", "c",
+    "h", "cs", "php", "swift", "sh", "bash", "zsh", "r", "ipynb",
+    "json", "yaml", "yml", "toml", "ini", "conf", "config", "lock",
+    "env", "gitignore", "gitattributes", "dockerignore", "editorconfig",
+    "eslintrc", "prettierrc", "babelrc", "npmrc", "nvmrc",
+    "sql", "graphql", "proto", "log",
+}
+
+# Exact filenames to skip
+SKIP_NAMES = {
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "requirements.txt", "Pipfile", "Pipfile.lock", "poetry.lock",
+    "Makefile", "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    ".env", ".env.local", ".env.production", ".gitignore", "tsconfig.json",
+    "next.config.js", "next.config.ts", "vite.config.ts", "webpack.config.js",
+    "tailwind.config.js", "tailwind.config.ts", "postcss.config.js",
+}
 
 def scan_dir(directory: Path, depth: int) -> list[dict]:
     nodes = []
@@ -98,6 +125,8 @@ def scan_dir(directory: Path, depth: int) -> list[dict]:
             continue
 
         if entry.is_dir():
+            if entry.name in SKIP_DIRS:
+                continue
             nodes.append({
                 "id":       str(entry),
                 "name":     entry.name,
@@ -113,6 +142,8 @@ def scan_dir(directory: Path, depth: int) -> list[dict]:
                 nodes.extend(scan_dir(entry, depth + 1))
 
         elif entry.is_file():
+            if entry.name in SKIP_NAMES:
+                continue
             try:
                 stat = entry.stat()
             except OSError:
@@ -121,6 +152,8 @@ def scan_dir(directory: Path, depth: int) -> list[dict]:
             if size_mb > MAX_FILE_MB:
                 continue
             ext = entry.suffix.lstrip(".").lower()
+            if ext in SKIP_EXTS:
+                continue
             ftype = get_file_type(ext)
             nodes.append({
                 "id":       str(entry),
@@ -131,7 +164,7 @@ def scan_dir(directory: Path, depth: int) -> list[dict]:
                 "modified": str(stat.st_mtime),
                 "ext":      ext,
                 "color":    FILE_TYPE_COLORS.get(ftype, FILE_TYPE_COLORS["other"]),
-                "val":      max(2, min(8, (stat.st_size / 1024).bit_length())),
+                "val":      max(2, min(8, int(stat.st_size / 1024).bit_length())),
             })
 
     return nodes
@@ -221,6 +254,17 @@ def embed_file(path: str, ftype: str) -> tuple[list[float], str]:
     return embed(meta), meta
 
 
+# ── Persistent index (written by index_desktop.py) ────────────────────────────
+INDEX_FILE = Path(__file__).parent / "index.json"
+
+def load_index() -> dict:
+    if INDEX_FILE.exists():
+        try:
+            return json.loads(INDEX_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
@@ -229,6 +273,13 @@ CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 @app.route("/api/files")
 def api_files():
     files = scan_dir(DESKTOP, 1)
+    # Merge in any pre-computed embeddings from index.json
+    index = load_index()
+    for f in files:
+        if f["id"] in index:
+            cached = index[f["id"]]
+            f["embedding"] = cached.get("embedding")
+            f["preview"]   = cached.get("preview", "")
     return jsonify({"files": files, "total": len(files), "desktop": str(DESKTOP)})
 
 
