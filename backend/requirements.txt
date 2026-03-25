@@ -1,0 +1,14 @@
+# ── Existing knowledge-graph app ──────────────────────────────────────────────
+flask==3.0.0
+openai==1.12.0
+neo4j==5.15.0
+beautifulsoup4==4.12.2
+requests==2.31.0
+tiktoken==0.5.2
+python-dotenv==1.0.0
+werkzeug==3.0.1
+
+# ── NeuralVault (neuralvault.py) ──────────────────────────────────────────────
+# Google Gen AI SDK — supports both API key and Vertex AI
+google-genai>=1.10.0
+flask-cors>=4.0.0
