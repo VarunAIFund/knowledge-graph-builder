@@ -290,6 +290,7 @@ frontend/.next/
 frontend/out/
 frontend/.turbo/
 frontend/node_modules/
+*.tsbuildinfo
 
 # =============================================================================
 # BACKEND (.env files — keep secrets out)

@@ -11,7 +11,7 @@ from pathlib import Path
 import mimetypes
 from collections import defaultdict
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -566,12 +566,37 @@ def api_graph():
     })
 
 
-@app.route("/api/open", methods=["POST"])
-def api_open():
+@app.route("/api/preview")
+def api_preview():
+    """Serve raw file bytes for image/PDF inline preview in the browser."""
     path = request.args.get("path", "")
     if not path:
         return jsonify({"error": "no path"}), 400
-    subprocess.Popen(["open", "-R", path])
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return jsonify({"error": "not found"}), 404
+    # Security: only serve files under DESKTOP
+    try:
+        p.resolve().relative_to(DESKTOP.resolve())
+    except ValueError:
+        return jsonify({"error": "forbidden"}), 403
+    mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+    resp = send_file(str(p.resolve()), mimetype=mime, as_attachment=False)
+    resp.headers["Content-Disposition"] = f"inline; filename=\"{p.name}\""
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@app.route("/api/open", methods=["POST"])
+def api_open():
+    path = request.args.get("path", "")
+    action = request.args.get("action", "reveal")  # "open" or "reveal"
+    if not path:
+        return jsonify({"error": "no path"}), 400
+    if action == "open":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["open", "-R", path])
     return jsonify({"ok": True})
 
 

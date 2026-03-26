@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Zap, RefreshCw, Loader2,
+  Zap, RefreshCw, Loader2, Network, Search,
   FileText, Image, Code, Film, Music, Folder, File,
   type LucideIcon,
 } from "lucide-react";
@@ -170,15 +171,28 @@ export default function Home() {
           transition: "right 0.32s cubic-bezier(0.32, 0.72, 0, 1)",
         }}
       >
-        {/* Logo */}
+        {/* Logo + tabs */}
         <div className="flex items-center gap-3">
           <span className="font-orbitron font-black text-[15px] tracking-wide text-slate-800">
             Neural<span className="text-indigo-500">Vault</span>
           </span>
           <span className="text-slate-300 select-none">·</span>
-          <span className="text-[12px] text-slate-400 font-medium hidden sm:block">
-            Desktop Intelligence
-          </span>
+          <div className="flex items-center gap-0.5">
+            <Link
+              href="/"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold bg-black/[0.07] text-slate-800 transition-colors"
+            >
+              <Network size={13} />
+              Graph
+            </Link>
+            <Link
+              href="/search"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium text-slate-500 hover:text-slate-700 hover:bg-black/[0.05] transition-colors"
+            >
+              <Search size={13} />
+              Search
+            </Link>
+          </div>
         </div>
 
         {/* Stats + Neo4j status */}
