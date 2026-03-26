@@ -183,14 +183,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     return map;
   }, [communityCenters, fileTypeCenters, aiLabels]);
 
-  const labelNodeIds = useMemo(() => {
-    const ids = new Set<string>(nodeLabelMap.keys());
-    [...filteredData.nodes]
-      .sort((a, b) => ((b as FileNode).val ?? 0) - ((a as FileNode).val ?? 0))
-      .slice(0, 12)
-      .forEach(n => ids.add((n as FileNode).id));
-    return ids;
-  }, [nodeLabelMap, filteredData.nodes]);
+  const labelNodeIds = useMemo(() => new Set<string>(nodeLabelMap.keys()), [nodeLabelMap]);
 
   // ── Throttled RAF: labels + cluster halos ─────────────────────────────────
   useEffect(() => {

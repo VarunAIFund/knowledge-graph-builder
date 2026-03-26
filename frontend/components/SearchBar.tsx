@@ -263,7 +263,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                             <Icon size={14} style={{ color }} />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-[14px] font-medium truncate" style={{ color: "var(--text)" }}>
+                            <p className="text-[14px] font-medium truncate" style={{ color: "#1c1c1e" }}>
                               {file.name}
                             </p>
                             <p className="text-[11px] truncate font-mono mt-0.5" style={{ color: "var(--text-muted)" }}>

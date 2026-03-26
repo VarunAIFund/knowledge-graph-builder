@@ -90,8 +90,8 @@ export default function SearchPage() {
         style={{ height: 56, borderLeft: "none", borderRight: "none", borderTop: "none", borderRadius: 0 }}
       >
         <div className="flex items-center gap-3">
-          <span className="font-orbitron font-black text-[15px] tracking-wide text-slate-100">
-            Neural<span className="text-indigo-400">Vault</span>
+          <span className="font-orbitron font-black text-[15px] tracking-wide" style={{ color: "#1c1c1e" }}>
+            Neural<span style={{ color: "var(--accent)" }}>Vault</span>
           </span>
           <span className="text-slate-300 select-none">·</span>
           <div className="flex items-center gap-0.5">
@@ -248,7 +248,7 @@ function ResultRow({ file, index, onOpen }: { file: FileNode; index: number; onO
         {/* Text content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-[14px] font-semibold text-slate-100 truncate">{file.name}</span>
+            <span className="text-[14px] font-semibold truncate" style={{ color: "#1c1c1e" }}>{file.name}</span>
             <div className="flex items-center gap-3 flex-shrink-0">
               {file.size > 0 && (
                 <span className="text-[11px] text-slate-400 tabular-nums">{formatBytes(file.size)}</span>
