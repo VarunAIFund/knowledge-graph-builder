@@ -25,8 +25,7 @@ export default function SearchPage() {
   const [results, setResults]     = useState<FileNode[]>([]);
   const [loading, setLoading]     = useState(true);
   const [searching, setSearching] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const inputRef    = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/files")
@@ -68,10 +67,12 @@ export default function SearchPage() {
   }, [files]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const q = e.target.value;
-    setQuery(q);
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => search(q), 280);
+    setQuery(e.target.value);
+    if (!e.target.value.trim()) setResults([]);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") search(query);
   };
 
   const openFile = (file: FileNode) => {
@@ -131,6 +132,7 @@ export default function SearchPage() {
               placeholder={loading ? "Loading…" : `Search ${files.length.toLocaleString()} files…`}
               value={query}
               onChange={handleChange}
+              onKeyDown={handleKeyDown}
               disabled={loading}
             />
             <AnimatePresence>

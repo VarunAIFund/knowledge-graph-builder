@@ -133,7 +133,8 @@ def main():
         try:
             embedding, preview = embed_file(f["path"], f["type"])
             lancedb_save_embedding(f["id"], embedding, preview)
-            print("✓")
+            preview_str = preview[:80].replace("\n", " ") if preview else ""
+            print(f"✓  {preview_str}")
         except Exception as e:
             print(f"✗  {e}")
             errors += 1

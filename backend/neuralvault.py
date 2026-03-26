@@ -107,10 +107,15 @@ SKIP_DIRS = {
     "Takeout", "PhotosLibrary", ".Trash",
     # Generated / extracted assets
     "images", "output", "outputs", "extracted_content", "pages",
+    "pdfplumber_output", "archive",
     # CS homework input/output/expected dirs
     "in", "out", "exp",
     # ML dataset splits
     "train", "test", "val", "validation",
+    # Bulk asset folders
+    "textures", "imgur",
+    # Homework datasets
+    "docsearch", "test_pdfs",
 }
 
 # Also skip any directory whose name starts with these prefixes (e.g. python3.12)
@@ -136,6 +141,8 @@ SKIP_EXTS = {
     "ini","conf","config","lock","env","gitignore","gitattributes",
     "dockerignore","editorconfig","eslintrc","prettierrc","babelrc",
     "npmrc","nvmrc","sql","graphql","proto","log",
+    "class",       # compiled Java bytecode
+    "h5", "hdf5",  # ML model weights
 }
 SKIP_NAMES = {
     "package.json","package-lock.json","yarn.lock","pnpm-lock.yaml",
