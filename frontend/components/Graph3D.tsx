@@ -1,7 +1,6 @@
 "use client";
 import { useRef, useEffect, useCallback, useState } from "react";
-import ForceGraph3D, { type ForceGraphMethods } from "react-force-graph-3d";
-import * as THREE from "three";
+import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d";
 import type { FileNode, GraphData } from "@/types";
 import { FILE_TYPE_COLORS } from "@/lib/utils";
 
@@ -11,7 +10,7 @@ interface Props {
   highlightIds?: Set<string>;
 }
 
-// ── Community palette — 20 distinct hues that look good on dark backgrounds ──
+// ── Community palette — 20 distinct hues ────────────────────────────────────
 const COMMUNITY_PALETTE = [
   "#6366f1", // indigo
   "#8b5cf6", // violet
@@ -42,39 +41,33 @@ function getCommunityColor(communityId: number | undefined, fileType: string): s
   return FILE_TYPE_COLORS[fileType as keyof typeof FILE_TYPE_COLORS] ?? "#64748b";
 }
 
-// ── Glow texture cache ────────────────────────────────────────────────────────
-const textureCache = new Map<string, THREE.Texture>();
-
-function makeGlowTexture(color: string): THREE.Texture {
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0,   color + "ff");
-  g.addColorStop(0.25, color + "cc");
-  g.addColorStop(0.6,  color + "44");
-  g.addColorStop(1,    color + "00");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(canvas);
+// ── Hex color to rgba ────────────────────────────────────────────────────────
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
-
-function getTexture(color: string): THREE.Texture {
-  if (!textureCache.has(color)) textureCache.set(color, makeGlowTexture(color));
-  return textureCache.get(color)!;
-}
-
-// ── Cluster shell geometry cache ──────────────────────────────────────────────
-const shellCache = new Map<string, THREE.Mesh>();
 
 export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<ForceGraphMethods<any, any>>();
   const [hovered, setHovered] = useState<FileNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [dimensions, setDimensions] = useState({
+    width: typeof window !== "undefined" ? window.innerWidth : 1200,
+    height: typeof window !== "undefined" ? window.innerHeight : 800,
+  });
 
-  // Compute community membership for cluster shell rendering
+  // Track window size
+  useEffect(() => {
+    const onResize = () =>
+      setDimensions({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Compute community membership for legend
   const communityNodes = useCallback(() => {
     const map = new Map<number, FileNode[]>();
     for (const node of data.nodes) {
@@ -88,127 +81,84 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     return map;
   }, [data.nodes]);
 
-  // Scene setup
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    fg.cameraPosition({ z: 400, y: 40 });
-
-    const scene = fg.scene() as THREE.Scene;
-
-    // Remove old lights
-    const toRemove = scene.children.filter(
-      (c) => c instanceof THREE.AmbientLight || c instanceof THREE.PointLight
-    );
-    toRemove.forEach((c) => scene.remove(c));
-
-    scene.add(new THREE.AmbientLight(0x0a0a18, 3));
-
-    const p1 = new THREE.PointLight(0x6366f1, 2.5, 900);
-    p1.position.set(250, 250, 200);
-    scene.add(p1);
-
-    const p2 = new THREE.PointLight(0x8b5cf6, 1.8, 700);
-    p2.position.set(-250, -150, 150);
-    scene.add(p2);
-
-    const p3 = new THREE.PointLight(0x14b8a6, 1.2, 500);
-    p3.position.set(0, -300, -200);
-    scene.add(p3);
-  }, []);
-
-  // Camera auto-rotation
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    let angle  = 0;
-    let tilt   = 0;
-    let running = true;
-    const R = 400, Y = 40;
-    const tick = () => {
-      if (!running) return;
-      angle += 0.0007;
-      tilt   = Math.sin(angle * 0.3) * 30;
-      fg.cameraPosition({ x: R * Math.sin(angle), z: R * Math.cos(angle), y: Y + tilt });
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    return () => { running = false; };
-  }, []);
-
-  const nodeThreeObject = useCallback(
-    (rawNode: object) => {
-      const node       = rawNode as FileNode;
-      const community  = node.community;
-      const color      = getCommunityColor(community, node.type);
-      const colorHex   = parseInt(color.replace("#", ""), 16);
+  // 2D canvas node rendering
+  const nodeCanvasObject = useCallback(
+    (rawNode: object, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const node = rawNode as FileNode & { x: number; y: number };
+      const color = getCommunityColor(node.community, node.type);
+      const radius = Math.max(4, (node.val ?? 3) * 1.4);
       const highlighted = highlightIds?.has(node.id);
-      const radius      = node.val ?? 3;
-      const group       = new THREE.Group();
+      const highDegree = (node.degree ?? 0) > 3;
 
-      // Core sphere — slightly different material based on indexed status
-      const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(radius, 24, 24),
-        new THREE.MeshStandardMaterial({
-          color:            colorHex,
-          emissive:         colorHex,
-          emissiveIntensity: highlighted ? 1.4 : node.indexed ? 0.7 : 0.35,
-          metalness:        0.5,
-          roughness:        node.indexed ? 0.1 : 0.4,
-        })
-      );
-      group.add(sphere);
-
-      // Glow halo — larger for highly-connected nodes
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map:         getTexture(color),
-          transparent: true,
-          blending:    THREE.AdditiveBlending,
-          depthWrite:  false,
-          opacity:     highlighted ? 0.9 : 0.65,
-        })
-      );
-      const glowMult = highlighted ? 8 : (node.degree ?? 0) > 3 ? 7 : 5;
-      sprite.scale.set(radius * glowMult, radius * glowMult, 1);
-      group.add(sprite);
-
-      // Highlight ring for search results
-      if (highlighted) {
-        const ring = new THREE.Mesh(
-          new THREE.TorusGeometry(radius * 2, 0.35, 8, 40),
-          new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.7 })
+      // Soft glow for highlighted or high-degree nodes
+      if (highlighted || highDegree) {
+        const glowRadius = radius * (highlighted ? 4 : 3);
+        const gradient = ctx.createRadialGradient(
+          node.x, node.y, 0,
+          node.x, node.y, glowRadius
         );
-        group.add(ring);
-
-        // Second outer ring for extra pop
-        const ring2 = new THREE.Mesh(
-          new THREE.TorusGeometry(radius * 2.8, 0.2, 8, 40),
-          new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.35 })
-        );
-        group.add(ring2);
+        gradient.addColorStop(0, hexToRgba(color, highlighted ? 0.35 : 0.2));
+        gradient.addColorStop(1, hexToRgba(color, 0));
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, glowRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = gradient;
+        ctx.fill();
       }
 
-      return group;
+      // Highlight ring
+      if (highlighted) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5 / globalScale;
+        ctx.stroke();
+      }
+
+      // Core circle
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // Inner white dot for indexed nodes (like Neo4j Bloom style)
+      if (node.indexed) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius * 0.35, 0, 2 * Math.PI);
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.fill();
+      }
+
+      // Label at higher zoom levels
+      if (globalScale > 2) {
+        const fontSize = Math.min(4, 10 / globalScale);
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.fillStyle = "#1e293b";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        const label = node.name.length > 18 ? node.name.slice(0, 16) + "…" : node.name;
+        ctx.fillText(label, node.x, node.y + radius + 1.5);
+      }
     },
     [highlightIds]
   );
 
-  // Link color — gradient from muted (low similarity) to vivid (high similarity)
-  const linkColor = useCallback((link: object) => {
-    const l     = link as { value?: number; source?: unknown; target?: unknown };
-    const score = l.value ?? 0.75;
-    // Interpolate: low similarity → slate-700, high → indigo-400
-    const alpha = Math.round(60 + score * 160).toString(16).padStart(2, "0");
-    // Pick hue from community if available — else use indigo
-    const srcId = typeof l.source === "string" ? l.source : (l.source as FileNode)?.id;
-    const srcNode = data.nodes.find((n) => n.id === srcId) as FileNode | undefined;
-    if (srcNode?.community !== undefined) {
-      const c = COMMUNITY_PALETTE[srcNode.community % COMMUNITY_PALETTE.length];
-      return c + alpha;
-    }
-    return `#818cf8${alpha}`; // indigo-400
-  }, [data.nodes]);
+  // Link color — light-background friendly
+  const linkColor = useCallback(
+    (link: object) => {
+      const l = link as { value?: number; source?: unknown; target?: unknown };
+      const score = l.value ?? 0.75;
+      const alpha = 0.15 + score * 0.45;
+      const srcId = typeof l.source === "string" ? l.source : (l.source as FileNode)?.id;
+      const srcNode = data.nodes.find((n) => n.id === srcId) as FileNode | undefined;
+      if (srcNode?.community !== undefined) {
+        const c = COMMUNITY_PALETTE[srcNode.community % COMMUNITY_PALETTE.length];
+        return hexToRgba(c, alpha);
+      }
+      // Default: slate-400 → indigo based on score
+      return hexToRgba("#94a3b8", alpha + 0.1);
+    },
+    [data.nodes]
+  );
 
   const handleNodeHover = useCallback(
     (rawNode: object | null, _prev: object | null, event?: MouseEvent) => {
@@ -232,34 +182,34 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
 
   return (
     <>
-      <ForceGraph3D
+      <ForceGraph2D
         ref={fgRef}
         graphData={data as { nodes: object[]; links: object[] }}
-        nodeThreeObject={nodeThreeObject}
-        nodeThreeObjectExtend={false}
+        nodeCanvasObject={nodeCanvasObject}
+        nodeCanvasObjectMode={() => "replace"}
         linkColor={linkColor}
         linkWidth={(link: object) => {
           const l = link as { value?: number };
-          return 0.4 + (l.value ?? 0.75) * 1.2;
+          return 0.5 + (l.value ?? 0.75) * 1.5;
         }}
-        linkOpacity={0.5}
+
         linkDirectionalParticles={2}
         linkDirectionalParticleSpeed={(link: object) => {
           const l = link as { value?: number };
           return 0.002 + (l.value ?? 0.75) * 0.006;
         }}
-        linkDirectionalParticleWidth={1.0}
+        linkDirectionalParticleWidth={1.5}
         linkDirectionalParticleColor={linkColor}
         backgroundColor="rgba(0,0,0,0)"
-        showNavInfo={false}
+
         onNodeClick={(rawNode: object) => onNodeClick(rawNode as FileNode)}
         onNodeHover={handleNodeHover as (node: object | null, prev: object | null) => void}
         nodeLabel={() => ""}
         cooldownTicks={150}
         d3AlphaDecay={0.015}
         d3VelocityDecay={0.25}
-        width={typeof window !== "undefined" ? window.innerWidth : 1200}
-        height={typeof window !== "undefined" ? window.innerHeight : 800}
+        width={dimensions.width}
+        height={dimensions.height - 56}
       />
 
       {/* Tooltip */}
@@ -269,8 +219,8 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             position: "fixed",
             left: tooltipPos.x,
             top: tooltipPos.y,
-            background: "rgba(9,9,11,0.92)",
-            border: "1px solid rgba(255,255,255,0.1)",
+            background: "rgba(255,255,255,0.96)",
+            border: "1px solid rgba(0,0,0,0.1)",
             borderRadius: 8,
             padding: "8px 12px",
             fontSize: 12,
@@ -278,7 +228,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             zIndex: 100,
             maxWidth: 280,
             backdropFilter: "blur(12px)",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
@@ -287,16 +237,15 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
                 width: 8, height: 8, borderRadius: "50%",
                 background: getCommunityColor(hovered.community, hovered.type),
                 flexShrink: 0,
-                boxShadow: `0 0 6px ${getCommunityColor(hovered.community, hovered.type)}`,
               }}
             />
-            <span style={{ color: "#94a3b8", fontSize: 10, fontFamily: "var(--font-space-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <span style={{ color: "#64748b", fontSize: 10, fontFamily: "var(--font-space-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {hovered.type}
               {hovered.community !== undefined ? ` · cluster ${hovered.community}` : ""}
               {hovered.degree ? ` · ${hovered.degree} link${hovered.degree !== 1 ? "s" : ""}` : ""}
             </span>
           </div>
-          <div style={{ color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-outfit)" }}>
+          <div style={{ color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-outfit)", fontWeight: 500 }}>
             {hovered.name}
           </div>
         </div>
@@ -314,15 +263,16 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             flexDirection: "column",
             gap: 4,
             padding: "10px 14px",
-            background: "rgba(9,9,11,0.7)",
-            border: "1px solid rgba(255,255,255,0.07)",
+            background: "rgba(255,255,255,0.92)",
+            border: "1px solid rgba(0,0,0,0.08)",
             borderRadius: 10,
             backdropFilter: "blur(12px)",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
             maxHeight: 280,
             overflowY: "auto",
           }}
         >
-          <div style={{ fontSize: 9, color: "#475569", fontFamily: "var(--font-space-mono)", letterSpacing: "0.12em", marginBottom: 4, textTransform: "uppercase" }}>
+          <div style={{ fontSize: 9, color: "#94a3b8", fontFamily: "var(--font-space-mono)", letterSpacing: "0.12em", marginBottom: 4, textTransform: "uppercase" }}>
             {communities.size} clusters
           </div>
           {Array.from(communities.entries())
@@ -337,14 +287,13 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
                     style={{
                       width: 7, height: 7, borderRadius: "50%",
                       background: color,
-                      boxShadow: `0 0 5px ${color}`,
                       flexShrink: 0,
                     }}
                   />
-                  <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "var(--font-outfit)", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 11, color: "#475569", fontFamily: "var(--font-outfit)", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {topNode?.name ?? `Cluster ${cId}`}
                   </span>
-                  <span style={{ fontSize: 10, color: color, marginLeft: "auto", fontFamily: "var(--font-space-mono)" }}>
+                  <span style={{ fontSize: 10, color, marginLeft: "auto", fontFamily: "var(--font-space-mono)" }}>
                     {nodes.length}
                   </span>
                 </div>

@@ -136,16 +136,14 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
       <button
         onClick={() => setOpen(true)}
         className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2.5 px-4 h-10 rounded-full
-          bg-white/[0.05] border border-white/[0.1] text-[13px] text-slate-400
-          hover:bg-white/[0.08] hover:text-slate-300 hover:border-white/[0.16]
-          transition-all duration-150 pressable z-40 shadow-lg"
+          bg-white/90 border border-black/[0.1] text-[13px] text-slate-500
+          hover:bg-white hover:text-slate-700 hover:border-black/[0.18]
+          transition-all duration-150 pressable z-40 shadow-md"
         style={{ backdropFilter: "blur(12px)" }}
       >
         <Search size={13} />
         <span>Search files…</span>
-        <kbd
-          className="ml-1 text-[11px] bg-white/[0.08] text-slate-500 px-1.5 py-0.5 rounded font-mono"
-        >
+        <kbd className="ml-1 text-[11px] bg-black/[0.06] text-slate-400 px-1.5 py-0.5 rounded font-mono">
           ⌘K
         </kbd>
       </button>
@@ -160,7 +158,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="fixed inset-0 z-50 bg-black/60"
+              className="fixed inset-0 z-50 bg-black/40"
               style={{ backdropFilter: "blur(4px)" }}
               onClick={() => setOpen(false)}
             />
@@ -180,11 +178,11 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                 {loading ? (
                   <Loader2
                     size={16}
-                    className="text-indigo-400 flex-shrink-0"
+                    className="text-indigo-500 flex-shrink-0"
                     style={{ animation: "spin 0.8s linear infinite" }}
                   />
                 ) : (
-                  <Search size={16} className="text-slate-500 flex-shrink-0" />
+                  <Search size={16} className="text-slate-400 flex-shrink-0" />
                 )}
                 <input
                   ref={inputRef}
@@ -197,25 +195,25 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                 {query ? (
                   <button
                     onClick={() => { setQuery(""); setResults([]); onHighlight(new Set()); }}
-                    className="pressable text-slate-500 hover:text-slate-300 transition-colors flex-shrink-0"
+                    className="pressable text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
                   >
                     <X size={14} />
                   </button>
                 ) : (
-                  <kbd className="text-[11px] bg-white/[0.06] text-slate-600 px-1.5 py-0.5 rounded font-mono flex-shrink-0">
+                  <kbd className="text-[11px] bg-black/[0.06] text-slate-400 px-1.5 py-0.5 rounded font-mono flex-shrink-0">
                     esc
                   </kbd>
                 )}
               </div>
 
-              <Separator className="bg-white/[0.06]" />
+              <Separator className="bg-black/[0.06]" />
 
               {/* Results */}
               {results.length > 0 && (
                 <ScrollArea className="max-h-[420px]">
                   <div className="py-1.5">
                     <div className="px-4 py-2">
-                      <span className="text-[11px] text-slate-600 font-medium uppercase tracking-wider">
+                      <span className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">
                         {results.length} result{results.length !== 1 ? "s" : ""}
                         {indexedCount > 0 ? " · semantic" : " · filename"}
                       </span>
@@ -235,7 +233,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                           }}
                           onClick={() => selectFile(file)}
                           className={`search-result-row w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
-                            activeIndex === i ? "bg-white/[0.07]" : ""
+                            activeIndex === i ? "bg-black/[0.05]" : ""
                           }`}
                           onMouseEnter={() => setActiveIndex(i)}
                         >
@@ -252,10 +250,10 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
 
                           {/* Name + path */}
                           <div className="min-w-0 flex-1">
-                            <p className="text-[14px] font-medium text-slate-100 truncate">
+                            <p className="text-[14px] font-medium text-slate-800 truncate">
                               {file.name}
                             </p>
-                            <p className="text-[11px] text-slate-500 truncate font-mono mt-0.5">
+                            <p className="text-[11px] text-slate-400 truncate font-mono mt-0.5">
                               {file.path}
                             </p>
                           </div>
@@ -282,14 +280,14 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
               {/* Empty state */}
               {query && !loading && results.length === 0 && (
                 <div className="px-5 py-10 text-center">
-                  <p className="text-[14px] text-slate-500">No files found for &ldquo;{query}&rdquo;</p>
+                  <p className="text-[14px] text-slate-400">No files found for &ldquo;{query}&rdquo;</p>
                 </div>
               )}
 
               {/* Empty query state */}
               {!query && (
                 <div className="px-5 py-6 text-center">
-                  <p className="text-[13px] text-slate-600">
+                  <p className="text-[13px] text-slate-400">
                     {indexedCount > 0
                       ? `${indexedCount} files indexed · type to search semantically`
                       : "Type a filename to search · generate embeddings for semantic search"}
@@ -298,7 +296,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
               )}
 
               {/* Footer hints */}
-              <Separator className="bg-white/[0.06]" />
+              <Separator className="bg-black/[0.06]" />
               <div className="flex items-center gap-4 px-5 py-2.5">
                 {[
                   { key: "↑↓", label: "navigate" },
@@ -306,10 +304,10 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                   { key: "esc", label: "close" },
                 ].map(({ key, label }) => (
                   <div key={key} className="flex items-center gap-1.5">
-                    <kbd className="text-[10px] bg-white/[0.06] text-slate-500 px-1.5 py-0.5 rounded font-mono">
+                    <kbd className="text-[10px] bg-black/[0.06] text-slate-500 px-1.5 py-0.5 rounded font-mono">
                       {key}
                     </kbd>
-                    <span className="text-[11px] text-slate-600">{label}</span>
+                    <span className="text-[11px] text-slate-400">{label}</span>
                   </div>
                 ))}
               </div>

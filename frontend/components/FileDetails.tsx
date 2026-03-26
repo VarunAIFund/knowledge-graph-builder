@@ -60,7 +60,7 @@ export default function FileDetails({ file, onClose }: Props) {
             </Badge>
             <button
               onClick={onClose}
-              className="pressable w-7 h-7 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+              className="pressable w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-black/[0.06] transition-colors"
             >
               <X size={14} />
             </button>
@@ -78,18 +78,18 @@ export default function FileDetails({ file, onClose }: Props) {
               <Icon size={24} style={{ color }} />
             </div>
             <div className="space-y-1 w-full">
-              <p className="text-[15px] font-semibold text-slate-100 leading-tight break-words px-2">
+              <p className="text-[15px] font-semibold text-slate-800 leading-tight break-words px-2">
                 {file.name}
               </p>
               {file.ext && (
-                <p className="text-[11px] text-slate-500 font-mono uppercase tracking-wider">
+                <p className="text-[11px] text-slate-400 font-mono uppercase tracking-wider">
                   .{file.ext}
                 </p>
               )}
             </div>
           </div>
 
-          <Separator className="bg-white/[0.06]" />
+          <Separator className="bg-black/[0.06]" />
 
           {/* Metadata */}
           <div className="flex flex-col gap-3">
@@ -118,13 +118,13 @@ export default function FileDetails({ file, onClose }: Props) {
           {/* AI Summary */}
           {file.preview && (
             <>
-              <Separator className="bg-white/[0.06]" />
+              <Separator className="bg-black/[0.06]" />
               <div className="space-y-2">
-                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
                   Summary
                 </p>
-                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3">
-                  <p className="text-[13px] text-slate-300 leading-relaxed">
+                <div className="rounded-lg bg-black/[0.03] border border-black/[0.06] p-3">
+                  <p className="text-[13px] text-slate-600 leading-relaxed">
                     {file.preview}
                   </p>
                 </div>
@@ -138,7 +138,6 @@ export default function FileDetails({ file, onClose }: Props) {
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{
                 background: file.embedding ? "var(--green)" : "var(--text-dim)",
-                boxShadow: file.embedding ? "0 0 6px var(--green)" : "none",
               }}
             />
             <span
@@ -160,11 +159,11 @@ export default function FileDetails({ file, onClose }: Props) {
       </ScrollArea>
 
       {/* Footer action */}
-      <div className="p-4 border-t border-white/[0.06]">
+      <div className="p-4 border-t border-black/[0.06]">
         <Button
           onClick={openFile}
           variant="outline"
-          className="w-full gap-2 h-9 text-[13px] border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.07] text-slate-200 hover:text-white"
+          className="w-full gap-2 h-9 text-[13px] border-black/[0.1] bg-black/[0.02] hover:bg-black/[0.05] text-slate-700 hover:text-slate-900"
         >
           <ExternalLink size={13} />
           Open in Finder
@@ -187,7 +186,7 @@ function MetaRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 text-slate-500 min-w-0">
+      <div className="flex items-center gap-2 text-slate-400 min-w-0">
         {icon}
         <span className="text-[12px] font-medium">{label}</span>
       </div>
