@@ -532,6 +532,9 @@ def api_embed():
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    if ftype == "folder":
+        return jsonify({"embedding": None, "preview": ""}), 200
+
     try:
         vec, preview = embed_file(path, ftype)
 

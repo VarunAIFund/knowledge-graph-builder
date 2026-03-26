@@ -304,3 +304,8 @@ backend/.env
 
 
 backend/index.json
+
+# Screenshots
+*.png
+*.jpeg
+*.jpg

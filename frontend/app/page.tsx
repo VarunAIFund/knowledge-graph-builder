@@ -173,21 +173,21 @@ export default function Home() {
       >
         {/* Logo + tabs */}
         <div className="flex items-center gap-3">
-          <span className="font-orbitron font-black text-[15px] tracking-wide text-slate-800">
-            Neural<span className="text-indigo-500">Vault</span>
+          <span className="font-orbitron font-black text-[15px] tracking-wide text-slate-100">
+            Neural<span className="text-indigo-400">Vault</span>
           </span>
           <span className="text-slate-300 select-none">·</span>
           <div className="flex items-center gap-0.5">
             <Link
               href="/"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold bg-black/[0.07] text-slate-800 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold bg-white/[0.09] text-slate-100 transition-colors"
             >
               <Network size={13} />
               Graph
             </Link>
             <Link
               href="/search"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium text-slate-500 hover:text-slate-700 hover:bg-black/[0.05] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
             >
               <Search size={13} />
               Search
@@ -196,48 +196,18 @@ export default function Home() {
         </div>
 
         {/* Stats + Neo4j status */}
-        <div className="hidden md:flex items-center gap-4 text-[12px] text-slate-400">
-          <span><span className="text-slate-700 font-semibold">{files.length}</span> files</span>
-          <span><span className="text-slate-700 font-semibold">{embCount}</span> indexed</span>
-          <span><span className="text-slate-700 font-semibold">{graphData.links.length}</span> links</span>
+        <div className="hidden md:flex items-center gap-4 text-[12px] text-slate-500">
+          <span><span className="text-slate-200 font-semibold">{files.length}</span> files</span>
+          <span><span className="text-slate-200 font-semibold">{embCount}</span> indexed</span>
+          <span><span className="text-slate-200 font-semibold">{graphData.links.length}</span> links</span>
           {neo4jConnected && communityCount > 0 && (
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="text-emerald-700 text-[11px]">{communityCount} clusters</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="text-emerald-400 text-[11px]">{communityCount} clusters</span>
             </span>
           )}
         </div>
 
-        {/* Type filter (compact, in header) */}
-        <div className="hidden lg:flex items-center gap-1">
-          <button
-            onClick={() => setFilterType(null)}
-            className={`px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors pressable ${
-              filterType === null
-                ? "bg-indigo-50 text-indigo-600 border border-indigo-200"
-                : "text-slate-500 hover:text-slate-700 hover:bg-black/[0.05]"
-            }`}
-          >
-            All
-          </button>
-          {Object.entries(typeCounts).slice(0, 5).map(([type, count]) => {
-            const color = FILE_TYPE_COLORS[type as keyof typeof FILE_TYPE_COLORS] ?? "#64748b";
-            const Icon  = TYPE_ICONS[type] ?? File;
-            return (
-              <button
-                key={type}
-                onClick={() => setFilterType(filterType === type ? null : type)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors pressable ${
-                  filterType === type ? "border" : "text-slate-500 hover:text-slate-700 hover:bg-black/[0.05]"
-                }`}
-                style={filterType === type ? { color, borderColor: `${color}40`, backgroundColor: `${color}10` } : {}}
-              >
-                <Icon size={11} style={{ color: filterType === type ? color : undefined }} />
-                <span>{count}</span>
-              </button>
-            );
-          })}
-        </div>
 
         {/* Actions */}
         <div className="flex items-center gap-2">
@@ -245,7 +215,7 @@ export default function Home() {
             variant="ghost" size="sm"
             onClick={loadFiles}
             disabled={loading || isEmbedding}
-            className="h-8 px-3 text-[12px] text-slate-500 hover:text-slate-800 hover:bg-black/[0.05] gap-1.5"
+            className="h-8 px-3 text-[12px] text-slate-400 hover:text-slate-100 hover:bg-white/[0.06] gap-1.5"
           >
             <RefreshCw size={12} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
             Scan
@@ -254,7 +224,7 @@ export default function Home() {
             size="sm" variant="outline"
             onClick={generateEmbeddings}
             disabled={isEmbedding || files.length === 0}
-            className="h-8 px-3 text-[12px] gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 hover:border-indigo-300"
+            className="h-8 px-3 text-[12px] gap-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/25 hover:border-indigo-500/40"
           >
             <Zap size={12} />
             {isEmbedding ? `${Math.round(embeddingProgress)}%` : embCount > 0 ? "Re-embed" : "Generate embeddings"}
@@ -269,11 +239,11 @@ export default function Home() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 z-[80] flex flex-col items-center justify-center"
-            style={{ background: "rgba(238,240,245,0.92)", backdropFilter: "blur(4px)" }}
+            style={{ background: "rgba(13,15,20,0.95)", backdropFilter: "blur(8px)" }}
           >
             <Loader2 size={32} className="text-indigo-500 mb-4" style={{ animation: "spin 0.8s linear infinite" }} />
-            <p className="text-[14px] font-medium text-slate-700">Scanning Desktop…</p>
-            <p className="text-[12px] text-slate-400 mt-1">Building file index</p>
+            <p className="text-[14px] font-medium text-slate-200">Scanning Desktop…</p>
+            <p className="text-[12px] text-slate-500 mt-1">Building file index</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -292,7 +262,7 @@ export default function Home() {
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
                 <Zap size={12} className="text-indigo-500" />
-                <span className="text-[12px] font-medium text-slate-700">Generating embeddings → Neo4j</span>
+                <span className="text-[12px] font-medium text-slate-200">Generating embeddings → Neo4j</span>
               </div>
               <span className="text-[12px] text-slate-400 font-mono">{embeddedCount} / {files.length}</span>
             </div>
@@ -353,17 +323,17 @@ export default function Home() {
                     gap: 8,
                     padding: "5px 14px 5px 10px",
                     borderRadius: 20,
-                    background: color,
-                    opacity: filterType && !isActive ? 0.4 : 1,
-                    border: isActive ? "2px solid rgba(0,0,0,0.3)" : "2px solid transparent",
+                    background: `${color}18`,
+                    opacity: filterType && !isActive ? 0.3 : 1,
+                    border: isActive ? `1.5px solid ${color}` : `1.5px solid ${color}45`,
                     cursor: "pointer",
-                    transition: "opacity 0.15s, border 0.15s",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                    transition: "opacity 0.15s, border 0.15s, box-shadow 0.15s",
+                    boxShadow: isActive ? `0 0 14px ${color}35` : "none",
                   }}
                 >
                   <span
                     style={{
-                      color: "white",
+                      color: color,
                       fontWeight: 700,
                       fontSize: 12,
                       fontFamily: "var(--font-space-mono)",
@@ -375,11 +345,12 @@ export default function Home() {
                   </span>
                   <span
                     style={{
-                      color: "white",
+                      color: color,
                       fontSize: 12,
-                      fontWeight: 600,
+                      fontWeight: 500,
                       fontFamily: "var(--font-outfit)",
                       textTransform: "capitalize",
+                      opacity: 0.85,
                     }}
                   >
                     {type}

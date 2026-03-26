@@ -60,7 +60,7 @@ export default function FileDetails({ file, onClose }: Props) {
             </Badge>
             <button
               onClick={onClose}
-              className="pressable w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-black/[0.06] transition-colors"
+              className="pressable w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-white/[0.08] transition-colors"
             >
               <X size={14} />
             </button>
@@ -78,7 +78,7 @@ export default function FileDetails({ file, onClose }: Props) {
               <Icon size={24} style={{ color }} />
             </div>
             <div className="space-y-1 w-full">
-              <p className="text-[15px] font-semibold text-slate-800 leading-tight break-words px-2">
+              <p className="text-[15px] font-semibold text-slate-100 leading-tight break-words px-2">
                 {file.name}
               </p>
               {file.ext && (
@@ -89,7 +89,7 @@ export default function FileDetails({ file, onClose }: Props) {
             </div>
           </div>
 
-          <Separator className="bg-black/[0.06]" />
+          <Separator className="bg-white/[0.07]" />
 
           {/* Metadata */}
           <div className="flex flex-col gap-3">
@@ -118,13 +118,13 @@ export default function FileDetails({ file, onClose }: Props) {
           {/* AI Summary */}
           {file.preview && (
             <>
-              <Separator className="bg-black/[0.06]" />
+              <Separator className="bg-white/[0.07]" />
               <div className="space-y-2">
                 <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
                   Summary
                 </p>
-                <div className="rounded-lg bg-black/[0.03] border border-black/[0.06] p-3">
-                  <p className="text-[13px] text-slate-600 leading-relaxed">
+                <div className="rounded-lg bg-white/[0.04] border border-white/[0.07] p-3">
+                  <p className="text-[13px] text-slate-300 leading-relaxed">
                     {file.preview}
                   </p>
                 </div>
@@ -159,11 +159,11 @@ export default function FileDetails({ file, onClose }: Props) {
       </ScrollArea>
 
       {/* Footer action */}
-      <div className="p-4 border-t border-black/[0.06]">
+      <div className="p-4 border-t border-white/[0.07]">
         <Button
           onClick={openFile}
           variant="outline"
-          className="w-full gap-2 h-9 text-[13px] border-black/[0.1] bg-black/[0.02] hover:bg-black/[0.05] text-slate-700 hover:text-slate-900"
+          className="w-full gap-2 h-9 text-[13px] border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-slate-100"
         >
           <ExternalLink size={13} />
           Open in Finder

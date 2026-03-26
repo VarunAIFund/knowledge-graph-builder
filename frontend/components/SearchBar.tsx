@@ -136,14 +136,14 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
       <button
         onClick={() => setOpen(true)}
         className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2.5 px-4 h-10 rounded-full
-          bg-white/90 border border-black/[0.1] text-[13px] text-slate-500
-          hover:bg-white hover:text-slate-700 hover:border-black/[0.18]
-          transition-all duration-150 pressable z-40 shadow-md"
-        style={{ backdropFilter: "blur(12px)" }}
+          bg-white/[0.07] border border-white/[0.1] text-[13px] text-slate-400
+          hover:bg-white/[0.12] hover:text-slate-200 hover:border-white/[0.2]
+          transition-all duration-150 pressable z-40"
+        style={{ backdropFilter: "blur(16px)", boxShadow: "0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)" }}
       >
         <Search size={13} />
         <span>Search files…</span>
-        <kbd className="ml-1 text-[11px] bg-black/[0.06] text-slate-400 px-1.5 py-0.5 rounded font-mono">
+        <kbd className="ml-1 text-[11px] bg-white/[0.08] text-slate-400 px-1.5 py-0.5 rounded font-mono">
           ⌘K
         </kbd>
       </button>
@@ -200,13 +200,13 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                     <X size={14} />
                   </button>
                 ) : (
-                  <kbd className="text-[11px] bg-black/[0.06] text-slate-400 px-1.5 py-0.5 rounded font-mono flex-shrink-0">
+                  <kbd className="text-[11px] bg-white/[0.08] text-slate-400 px-1.5 py-0.5 rounded font-mono flex-shrink-0">
                     esc
                   </kbd>
                 )}
               </div>
 
-              <Separator className="bg-black/[0.06]" />
+              <Separator className="bg-white/[0.08]" />
 
               {/* Results */}
               {results.length > 0 && (
@@ -233,7 +233,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                           }}
                           onClick={() => selectFile(file)}
                           className={`search-result-row w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
-                            activeIndex === i ? "bg-black/[0.05]" : ""
+                            activeIndex === i ? "bg-white/[0.07]" : ""
                           }`}
                           onMouseEnter={() => setActiveIndex(i)}
                         >
@@ -250,7 +250,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
 
                           {/* Name + path */}
                           <div className="min-w-0 flex-1">
-                            <p className="text-[14px] font-medium text-slate-800 truncate">
+                            <p className="text-[14px] font-medium text-slate-100 truncate">
                               {file.name}
                             </p>
                             <p className="text-[11px] text-slate-400 truncate font-mono mt-0.5">
@@ -296,7 +296,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
               )}
 
               {/* Footer hints */}
-              <Separator className="bg-black/[0.06]" />
+              <Separator className="bg-white/[0.08]" />
               <div className="flex items-center gap-4 px-5 py-2.5">
                 {[
                   { key: "↑↓", label: "navigate" },
@@ -304,7 +304,7 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
                   { key: "esc", label: "close" },
                 ].map(({ key, label }) => (
                   <div key={key} className="flex items-center gap-1.5">
-                    <kbd className="text-[10px] bg-black/[0.06] text-slate-500 px-1.5 py-0.5 rounded font-mono">
+                    <kbd className="text-[10px] bg-white/[0.08] text-slate-500 px-1.5 py-0.5 rounded font-mono">
                       {key}
                     </kbd>
                     <span className="text-[11px] text-slate-400">{label}</span>

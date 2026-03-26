@@ -132,7 +132,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
       if (globalScale > 2) {
         const fontSize = Math.min(4, 10 / globalScale);
         ctx.font = `${fontSize}px sans-serif`;
-        ctx.fillStyle = "#1e293b";
+        ctx.fillStyle = "rgba(255,255,255,0.65)";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         const label = node.name.length > 18 ? node.name.slice(0, 16) + "…" : node.name;
@@ -142,20 +142,20 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     [highlightIds]
   );
 
-  // Link color — light-background friendly
+  // Link color — dark-background optimized
   const linkColor = useCallback(
     (link: object) => {
       const l = link as { value?: number; source?: unknown; target?: unknown };
       const score = l.value ?? 0.75;
-      const alpha = 0.15 + score * 0.45;
+      const alpha = 0.2 + score * 0.5;
       const srcId = typeof l.source === "string" ? l.source : (l.source as FileNode)?.id;
       const srcNode = data.nodes.find((n) => n.id === srcId) as FileNode | undefined;
       if (srcNode?.community !== undefined) {
         const c = COMMUNITY_PALETTE[srcNode.community % COMMUNITY_PALETTE.length];
         return hexToRgba(c, alpha);
       }
-      // Default: slate-400 → indigo based on score
-      return hexToRgba("#94a3b8", alpha + 0.1);
+      // Default: indigo tint for neural vibe
+      return hexToRgba("#6366f1", 0.22 + score * 0.3);
     },
     [data.nodes]
   );
@@ -219,16 +219,16 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             position: "fixed",
             left: tooltipPos.x,
             top: tooltipPos.y,
-            background: "rgba(255,255,255,0.96)",
-            border: "1px solid rgba(0,0,0,0.1)",
+            background: "rgba(13,15,20,0.92)",
+            border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: 8,
             padding: "8px 12px",
             fontSize: 12,
             pointerEvents: "none",
             zIndex: 100,
             maxWidth: 280,
-            backdropFilter: "blur(12px)",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+            backdropFilter: "blur(16px)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
@@ -237,15 +237,16 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
                 width: 8, height: 8, borderRadius: "50%",
                 background: getCommunityColor(hovered.community, hovered.type),
                 flexShrink: 0,
+                boxShadow: `0 0 6px ${getCommunityColor(hovered.community, hovered.type)}80`,
               }}
             />
-            <span style={{ color: "#64748b", fontSize: 10, fontFamily: "var(--font-space-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <span style={{ color: "#94a3b8", fontSize: 10, fontFamily: "var(--font-space-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {hovered.type}
               {hovered.community !== undefined ? ` · cluster ${hovered.community}` : ""}
               {hovered.degree ? ` · ${hovered.degree} link${hovered.degree !== 1 ? "s" : ""}` : ""}
             </span>
           </div>
-          <div style={{ color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-outfit)", fontWeight: 500 }}>
+          <div style={{ color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-outfit)", fontWeight: 500 }}>
             {hovered.name}
           </div>
         </div>
@@ -263,11 +264,11 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             flexDirection: "column",
             gap: 4,
             padding: "10px 14px",
-            background: "rgba(255,255,255,0.92)",
-            border: "1px solid rgba(0,0,0,0.08)",
+            background: "rgba(13,15,20,0.88)",
+            border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 10,
-            backdropFilter: "blur(12px)",
-            boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+            backdropFilter: "blur(16px)",
+            boxShadow: "0 2px 16px rgba(0,0,0,0.5)",
             maxHeight: 280,
             overflowY: "auto",
           }}
@@ -290,7 +291,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
                       flexShrink: 0,
                     }}
                   />
-                  <span style={{ fontSize: 11, color: "#475569", fontFamily: "var(--font-outfit)", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "var(--font-outfit)", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {topNode?.name ?? `Cluster ${cId}`}
                   </span>
                   <span style={{ fontSize: 10, color, marginLeft: "auto", fontFamily: "var(--font-space-mono)" }}>

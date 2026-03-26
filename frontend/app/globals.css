@@ -4,17 +4,17 @@
 
 /* ─── Design tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --bg:           #eef0f5;
-  --surface:      rgba(255, 255, 255, 0.95);
-  --surface-2:    rgba(255, 255, 255, 1);
-  --border:       rgba(0, 0, 0, 0.08);
-  --border-h:     rgba(0, 0, 0, 0.16);
-  --accent:       #6366f1;
-  --accent-2:     #8b5cf6;
-  --text:         #1e293b;
-  --text-muted:   #64748b;
-  --text-dim:     #94a3b8;
-  --green:        #16a34a;
+  --bg:           #0d0f14;
+  --surface:      rgba(255, 255, 255, 0.05);
+  --surface-2:    rgba(255, 255, 255, 0.08);
+  --border:       rgba(255, 255, 255, 0.08);
+  --border-h:     rgba(255, 255, 255, 0.15);
+  --accent:       #818cf8;
+  --accent-2:     #a78bfa;
+  --text:         #f1f5f9;
+  --text-muted:   #94a3b8;
+  --text-dim:     #475569;
+  --green:        #34d399;
 
   /* Easing tokens */
   --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
@@ -27,32 +27,32 @@
   /* shadcn CSS variable overrides */
   --background:           var(--bg);
   --foreground:           var(--text);
-  --card:                 rgba(255, 255, 255, 0.95);
+  --card:                 rgba(255, 255, 255, 0.05);
   --card-foreground:      var(--text);
-  --popover:              #ffffff;
+  --popover:              #1a1d27;
   --popover-foreground:   var(--text);
   --primary:              var(--accent);
   --primary-foreground:   #fff;
-  --secondary:            rgba(0, 0, 0, 0.05);
+  --secondary:            rgba(255, 255, 255, 0.06);
   --secondary-foreground: var(--text);
-  --muted:                rgba(0, 0, 0, 0.04);
+  --muted:                rgba(255, 255, 255, 0.04);
   --muted-foreground:     var(--text-muted);
-  --accent-var:           rgba(99, 102, 241, 0.1);
+  --accent-var:           rgba(129, 140, 248, 0.15);
   --accent-foreground:    var(--text);
-  --destructive:          #ef4444;
+  --destructive:          #f87171;
   --destructive-foreground: #fff;
-  --input:                rgba(0, 0, 0, 0.06);
+  --input:                rgba(255, 255, 255, 0.08);
   --ring:                 var(--accent);
   --radius:               0.5rem;
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
-* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.15) transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
 @media (hover: hover) and (pointer: fine) {
-  ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
 }
 
 /* ─── Base ───────────────────────────────────────────────────────────────────── */
@@ -71,16 +71,18 @@ body {
   inset: 0;
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99,102,241,0.05) 0%, transparent 60%);
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99,102,241,0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 15% 85%, rgba(139,92,246,0.07) 0%, transparent 50%),
+    radial-gradient(ellipse 30% 30% at 85% 70%, rgba(56,189,248,0.05) 0%, transparent 50%);
 }
 
 /* ─── Glass panel ────────────────────────────────────────────────────────────── */
 .glass {
-  background: var(--surface);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border: 1px solid var(--border);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
 }
 
 /* ─── Search input ───────────────────────────────────────────────────────────── */
@@ -107,7 +109,7 @@ body {
 /* ─── Search result hover ────────────────────────────────────────────────────── */
 @media (hover: hover) and (pointer: fine) {
   .search-result-row:hover {
-    background: rgba(0, 0, 0, 0.04);
+    background: rgba(255, 255, 255, 0.06);
   }
 }
 
