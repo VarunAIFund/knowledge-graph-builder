@@ -69,8 +69,9 @@ def main():
     print(f"Found {len(files)} items\n")
 
     if args.dry_run:
-        # Count embeddable files (non-folders) by type
         embeddable = [f for f in files if f["type"] != "folder"]
+
+        # Summary by type
         by_type: dict[str, int] = {}
         for f in embeddable:
             by_type[f["type"]] = by_type.get(f["type"], 0) + 1
@@ -78,6 +79,31 @@ def main():
         print(f"  Depth {args.depth} → {len(embeddable)} files to embed ({len(files) - len(embeddable)} folders)\n")
         for ftype, count in sorted(by_type.items(), key=lambda x: -x[1]):
             print(f"    {ftype:8}  {count}")
+
+        # Find directories that contain only one file extension (potential datasets)
+        from collections import defaultdict
+        dir_exts: dict[str, set] = defaultdict(set)
+        dir_counts: dict[str, int] = defaultdict(int)
+        for f in embeddable:
+            parent = str(Path(f["path"]).parent)
+            dir_exts[parent].add(f["ext"] or f["type"])
+            dir_counts[parent] += 1
+
+        single_type_dirs = [
+            (parent, exts.pop(), dir_counts[parent])
+            for parent, exts in dir_exts.items()
+            if len(exts) == 1 and dir_counts[parent] >= 5
+        ]
+        single_type_dirs.sort(key=lambda x: -x[2])
+
+        if single_type_dirs:
+            print(f"\n  Directories with only one file type (possible datasets — {len(single_type_dirs)} found):\n")
+            for parent, ext, count in single_type_dirs[:30]:
+                rel = Path(parent).relative_to(DESKTOP) if Path(parent).is_relative_to(DESKTOP) else Path(parent)
+                print(f"    {count:5}x .{ext:10}  {rel}")
+            if len(single_type_dirs) > 30:
+                print(f"    ... and {len(single_type_dirs) - 30} more")
+
         print(f"\nDry run complete — no embeddings generated.")
         return
 

@@ -98,20 +98,29 @@ SCAN_DEPTH = int(os.environ.get("SCAN_DEPTH", "3"))
 MAX_FILE_MB = 100
 
 SKIP_DIRS = {
+    # Dev tooling
     "node_modules", ".git", "__pycache__", ".venv", "venv", "env",
     "dist", "build", ".next", ".cache", "vendor", ".tox", "coverage",
+    # Python package internals
+    "site-packages", "dist-packages", "typeshed", "zoneinfo",
+    # OS / app junk
+    "Takeout", "PhotosLibrary", ".Trash",
+    # Generated / extracted assets
+    "images", "output", "outputs", "extracted_content", "pages",
+    # CS homework input/output/expected dirs
+    "in", "out", "exp",
+    # ML dataset splits
+    "train", "test", "val", "validation",
 }
 
-# Folders with more than this many files of the same bulk type are skipped
-DATASET_THRESHOLD = 50
-DATASET_EXTS = {
-    ".png",".jpg",".jpeg",".gif",".webp",".bmp",".tiff",".tif",".heic",".heif",
-    ".json",".jsonl",".csv",".tsv",".npy",".npz",".pkl",".parquet",
-    ".tfrecord",".bin",".dat",".h5",".hdf5",".arrow",
-}
+# Also skip any directory whose name starts with these prefixes (e.g. python3.12)
+SKIP_DIR_PREFIXES = ("python3.", "python2.")
+
+# Folders with more than this many files of the same extension are skipped
+DATASET_THRESHOLD = 20
 
 def _is_dataset_dir(path: Path) -> bool:
-    """True if this folder looks like a bulk dataset (>50 files of one data type)."""
+    """True if this folder has >50 files that all share one extension."""
     try:
         children = list(path.iterdir())
     except PermissionError:
@@ -120,7 +129,7 @@ def _is_dataset_dir(path: Path) -> bool:
     for p in children:
         if p.is_file():
             by_ext[p.suffix.lower()] = by_ext.get(p.suffix.lower(), 0) + 1
-    return any(count > DATASET_THRESHOLD and ext in DATASET_EXTS for ext, count in by_ext.items())
+    return any(count > DATASET_THRESHOLD for count in by_ext.values())
 SKIP_EXTS = {
     "py","js","ts","jsx","tsx","rb","go","rs","java","cpp","c","h","cs",
     "php","swift","sh","bash","zsh","r","ipynb","json","yaml","yml","toml",
@@ -149,6 +158,8 @@ def scan_dir(directory: Path, depth: int) -> list[dict]:
             continue
         if entry.is_dir():
             if entry.name in SKIP_DIRS:
+                continue
+            if any(entry.name.startswith(p) for p in SKIP_DIR_PREFIXES):
                 continue
             if _is_dataset_dir(entry):
                 print(f"  [skip dataset]  {entry.name}")
