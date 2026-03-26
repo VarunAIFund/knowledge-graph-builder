@@ -8,13 +8,18 @@ import type { FileNode, GraphData } from "@/types";
 import { buildLinks } from "@/lib/utils";
 import FileDetails from "@/components/FileDetails";
 import SearchBar from "@/components/SearchBar";
-import { Button } from "@/components/ui/button";
+import { LiquidButton } from "@/components/ui/liquid-glass-button";
+import { GlassFilter } from "@/components/ui/liquid-glass";
 
 const Graph3D = dynamic(() => import("@/components/Graph3D"), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center w-full h-full">
-      <Loader2 size={24} className="text-indigo-500" style={{ animation: "spin 1s linear infinite" }} />
+      <Loader2
+        size={24}
+        className="text-indigo-500"
+        style={{ animation: "spin 1s linear infinite" }}
+      />
     </div>
   ),
 });
@@ -35,7 +40,6 @@ export default function Home() {
 
   useEffect(() => { loadFiles(); }, []);
 
-  /** Load files, then pull graph from Neo4j if available. */
   const loadFiles = async () => {
     setLoading(true);
     try {
@@ -45,7 +49,6 @@ export default function Home() {
       setFiles(loaded);
       filesRef.current = loaded;
 
-      // Try fetching the Neo4j graph first
       const graphRes = await fetch("/api/graph");
       if (graphRes.ok) {
         const gd = await graphRes.json();
@@ -131,10 +134,8 @@ export default function Home() {
     }, 3000);
   }, [isEmbedding]);
 
-
   const embCount = files.filter((f) => f.embedding).length;
 
-  // Strip isolated nodes (no links = scattered dust, hard to read)
   const displayData = useMemo<GraphData>(() => {
     if (graphData.links.length === 0) return graphData;
     const linked = new Set<string>();
@@ -152,74 +153,115 @@ export default function Home() {
 
   return (
     <div className="app-bg w-screen h-screen">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <GlassFilter />
+
+      {/* ── Header — macOS menubar glass ────────────────────────────────── */}
       <header
-        className="glass fixed top-0 left-0 z-40 flex items-center justify-between px-5"
+        className="glass fixed top-0 left-0 z-40 flex items-center justify-between px-4"
         style={{
           right: selectedFile ? 336 : 0,
-          height: 56,
-          borderLeft: "none", borderRight: "none", borderTop: "none", borderRadius: 0,
+          height: 52,
+          borderLeft: "none",
+          borderRight: "none",
+          borderTop: "none",
+          borderRadius: 0,
           transition: "right 0.32s cubic-bezier(0.32, 0.72, 0, 1)",
         }}
       >
-        {/* Logo + tabs */}
+        {/* Logo + nav */}
         <div className="flex items-center gap-3">
-          <span className="font-orbitron font-black text-[15px] tracking-wide text-slate-100">
-            Neural<span className="text-indigo-400">Vault</span>
+          <span className="font-orbitron font-black text-[14px] tracking-wider text-[#1c1c1e]">
+            Neural<span style={{ color: "var(--accent)" }}>Vault</span>
           </span>
-          <span className="text-slate-300 select-none">·</span>
-          <div className="flex items-center gap-0.5">
+
+          <span className="text-black/15 select-none text-[9px]">●</span>
+
+          <nav className="flex items-center gap-0.5">
             <Link
               href="/"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold bg-white/[0.09] text-slate-100 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-all duration-150"
+              style={{
+                color: "var(--accent)",
+                background: "rgba(88, 86, 214, 0.1)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8), 0 0 0 0.5px rgba(88,86,214,0.2)",
+              }}
             >
-              <Network size={13} />
+              <Network size={12} />
               Graph
             </Link>
             <Link
               href="/search"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150"
+              style={{ color: "var(--text-muted)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text)";
+                e.currentTarget.style.background = "rgba(0,0,0,0.05)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-muted)";
+                e.currentTarget.style.background = "";
+              }}
             >
-              <Search size={13} />
+              <Search size={12} />
               Search
             </Link>
-          </div>
+          </nav>
         </div>
 
-        {/* Stats + Neo4j status */}
-        <div className="hidden md:flex items-center gap-4 text-[12px] text-slate-500">
-          <span><span className="text-slate-200 font-semibold">{files.length}</span> files</span>
-          <span><span className="text-slate-200 font-semibold">{embCount}</span> indexed</span>
-          <span><span className="text-slate-200 font-semibold">{graphData.links.length}</span> links</span>
+        {/* Stats */}
+        <div className="hidden md:flex items-center gap-5 text-[11px]" style={{ color: "var(--text-dim)" }}>
+          <span>
+            <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>{files.length}</span>
+            <span className="ml-1">files</span>
+          </span>
+          <span>
+            <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>{embCount}</span>
+            <span className="ml-1">indexed</span>
+          </span>
+          <span>
+            <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>{graphData.links.length}</span>
+            <span className="ml-1">links</span>
+          </span>
           {neo4jConnected && communityCount > 0 && (
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span className="text-emerald-400 text-[11px]">{communityCount} clusters</span>
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: "var(--green)", boxShadow: "0 0 5px rgba(52,199,89,0.6)" }}
+              />
+              <span style={{ color: "var(--green)" }} className="font-medium">{communityCount} clusters</span>
             </span>
           )}
         </div>
 
-
         {/* Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost" size="sm"
+        <div className="flex items-center gap-1.5">
+          <LiquidButton
+            variant="ghost"
+            size="sm"
             onClick={loadFiles}
             disabled={loading || isEmbedding}
-            className="h-8 px-3 text-[12px] text-slate-400 hover:text-slate-100 hover:bg-white/[0.06] gap-1.5"
           >
-            <RefreshCw size={12} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+            <RefreshCw
+              size={12}
+              style={{ animation: loading ? "spin 1s linear infinite" : "none" }}
+            />
             Scan
-          </Button>
-          <Button
-            size="sm" variant="outline"
+          </LiquidButton>
+
+          <LiquidButton
+            variant="accent"
+            size="sm"
             onClick={generateEmbeddings}
             disabled={isEmbedding || files.length === 0}
-            className="h-8 px-3 text-[12px] gap-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/25 hover:border-indigo-500/40"
+            tint="rgba(88, 86, 214, 0.1)"
           >
             <Zap size={12} />
-            {isEmbedding ? `${Math.round(embeddingProgress)}%` : embCount > 0 ? "Re-embed" : "Generate embeddings"}
-          </Button>
+            {isEmbedding
+              ? `${Math.round(embeddingProgress)}%`
+              : embCount > 0
+              ? "Re-embed"
+              : "Generate embeddings"}
+          </LiquidButton>
         </div>
       </header>
 
@@ -227,41 +269,110 @@ export default function Home() {
       <AnimatePresence>
         {loading && (
           <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 z-[80] flex flex-col items-center justify-center"
-            style={{ background: "rgba(13,15,20,0.95)", backdropFilter: "blur(8px)" }}
+            style={{
+              background: "rgba(238, 240, 248, 0.8)",
+              backdropFilter: "blur(32px) saturate(180%)",
+              WebkitBackdropFilter: "blur(32px) saturate(180%)",
+            }}
           >
-            <Loader2 size={32} className="text-indigo-500 mb-4" style={{ animation: "spin 0.8s linear infinite" }} />
-            <p className="text-[14px] font-medium text-slate-200">Scanning Desktop…</p>
-            <p className="text-[12px] text-slate-500 mt-1">Building file index</p>
+            <div
+              className="flex flex-col items-center gap-3 px-10 py-8 rounded-3xl"
+              style={{
+                background: "rgba(255, 255, 255, 0.75)",
+                boxShadow: [
+                  "inset 0 1.5px 0 rgba(255,255,255,1)",
+                  "inset 0 -1px 0 rgba(0,0,0,0.03)",
+                  "0 0 0 0.5px rgba(0,0,0,0.1)",
+                  "0 16px 48px rgba(60,60,120,0.16)",
+                ].join(", "),
+              }}
+            >
+              <div
+                className="w-10 h-10 rounded-2xl flex items-center justify-center"
+                style={{
+                  background: "rgba(88,86,214,0.1)",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 0.5px rgba(88,86,214,0.2)",
+                }}
+              >
+                <Loader2
+                  size={20}
+                  style={{ color: "var(--accent)", animation: "spin 0.9s linear infinite" }}
+                />
+              </div>
+              <div className="text-center">
+                <p className="text-[14px] font-semibold tracking-tight" style={{ color: "var(--text)" }}>
+                  Scanning Desktop
+                </p>
+                <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  Building file index…
+                </p>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Embedding progress ──────────────────────────────────────────── */}
+      {/* ── Embedding progress toast ─────────────────────────────────────── */}
       <AnimatePresence>
         {isEmbedding && (
           <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.97 }}
-            transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
-            className="glass fixed bottom-20 left-1/2 -translate-x-1/2 z-[55] rounded-xl px-5 py-3.5"
-            style={{ width: "min(480px, calc(100vw - 64px))" }}
+            exit={{ opacity: 0, y: 12, scale: 0.96 }}
+            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[55] rounded-2xl px-5 py-4"
+            style={{
+              width: "min(420px, calc(100vw - 48px))",
+              background: "rgba(255, 255, 255, 0.75)",
+              backdropFilter: "blur(40px) saturate(180%)",
+              WebkitBackdropFilter: "blur(40px) saturate(180%)",
+              boxShadow: [
+                "inset 0 1.5px 0 rgba(255,255,255,1)",
+                "inset 0 -1px 0 rgba(0,0,0,0.04)",
+                "0 0 0 0.5px rgba(0,0,0,0.1)",
+                "0 12px 40px rgba(60,60,120,0.16)",
+              ].join(", "),
+            }}
           >
-            <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Zap size={12} className="text-indigo-500" />
-                <span className="text-[12px] font-medium text-slate-200">Generating embeddings → Neo4j</span>
+                <div
+                  className="w-5 h-5 rounded-md flex items-center justify-center"
+                  style={{
+                    background: "rgba(88,86,214,0.1)",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+                  }}
+                >
+                  <Zap size={10} style={{ color: "var(--accent)" }} />
+                </div>
+                <span className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>
+                  Generating embeddings
+                </span>
               </div>
-              <span className="text-[12px] text-slate-400 font-mono">{embeddedCount} / {files.length}</span>
+              <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--text-muted)" }}>
+                {embeddedCount} / {files.length}
+              </span>
             </div>
-            <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.06)" }}>
-              <div className="progress-bar h-full rounded-full" style={{ width: `${embeddingProgress}%` }} />
+
+            <div
+              className="h-1 rounded-full overflow-hidden"
+              style={{ background: "rgba(0,0,0,0.06)" }}
+            >
+              <div
+                className="progress-bar h-full rounded-full"
+                style={{ width: `${embeddingProgress}%` }}
+              />
             </div>
+
             {embeddingCurrent && (
-              <p className="font-mono text-[10px] text-slate-400 mt-2 truncate">{embeddingCurrent}</p>
+              <p className="font-mono text-[10px] mt-2 truncate" style={{ color: "var(--text-dim)" }}>
+                {embeddingCurrent}
+              </p>
             )}
           </motion.div>
         )}
@@ -270,7 +381,9 @@ export default function Home() {
       {/* ── 2D Graph ────────────────────────────────────────────────────── */}
       <div
         style={{
-          position: "fixed", inset: 0, paddingTop: 56,
+          position: "fixed",
+          inset: 0,
+          paddingTop: 52,
           paddingRight: selectedFile ? 336 : 0,
           transition: "padding-right 0.32s cubic-bezier(0.32, 0.72, 0, 1)",
         }}
@@ -283,7 +396,6 @@ export default function Home() {
           />
         )}
       </div>
-
 
       {/* ── File details ────────────────────────────────────────────────── */}
       <AnimatePresence>

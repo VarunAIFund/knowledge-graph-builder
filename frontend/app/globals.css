@@ -2,57 +2,67 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Design tokens ─────────────────────────────────────────────────────────── */
+/* ─── Design tokens — Apple light mode ──────────────────────────────────────── */
 :root {
-  --bg:           #0d0f14;
-  --surface:      rgba(255, 255, 255, 0.05);
-  --surface-2:    rgba(255, 255, 255, 0.08);
-  --border:       rgba(255, 255, 255, 0.08);
-  --border-h:     rgba(255, 255, 255, 0.15);
-  --accent:       #818cf8;
-  --accent-2:     #a78bfa;
-  --text:         #f1f5f9;
-  --text-muted:   #94a3b8;
-  --text-dim:     #475569;
-  --green:        #34d399;
+  /* Surfaces */
+  --bg:           #eef0f8;
+  --surface:      rgba(255, 255, 255, 0.65);
+  --surface-2:    rgba(255, 255, 255, 0.8);
+
+  /* Borders */
+  --border:       rgba(0, 0, 0, 0.08);
+  --border-h:     rgba(0, 0, 0, 0.15);
+
+  /* Accent — Apple indigo */
+  --accent:       #5856d6;
+  --accent-2:     #7c5fe6;
+
+  /* Typography — Apple system labels */
+  --text:         #1c1c1e;
+  --text-muted:   #6e6e73;
+  --text-dim:     #aeaeb2;
+
+  /* Status */
+  --green:        #34c759;
 
   /* Easing tokens */
   --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out:  cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer:  cubic-bezier(0.32, 0.72, 0, 1);
-  --dur-press:    120ms;
+  --ease-spring:  cubic-bezier(0.175, 0.885, 0.32, 1.5);
+  --dur-press:    100ms;
   --dur-dropdown: 200ms;
   --dur-panel:    320ms;
 
-  /* shadcn CSS variable overrides */
+  /* shadcn overrides */
   --background:           var(--bg);
   --foreground:           var(--text);
-  --card:                 rgba(255, 255, 255, 0.05);
+  --card:                 rgba(255, 255, 255, 0.7);
   --card-foreground:      var(--text);
-  --popover:              #1a1d27;
+  --popover:              rgba(255, 255, 255, 0.92);
   --popover-foreground:   var(--text);
   --primary:              var(--accent);
   --primary-foreground:   #fff;
-  --secondary:            rgba(255, 255, 255, 0.06);
+  --secondary:            rgba(0, 0, 0, 0.05);
   --secondary-foreground: var(--text);
-  --muted:                rgba(255, 255, 255, 0.04);
+  --muted:                rgba(0, 0, 0, 0.04);
   --muted-foreground:     var(--text-muted);
-  --accent-var:           rgba(129, 140, 248, 0.15);
+  --accent-var:           rgba(88, 86, 214, 0.12);
   --accent-foreground:    var(--text);
-  --destructive:          #f87171;
+  --destructive:          #ff3b30;
   --destructive-foreground: #fff;
-  --input:                rgba(255, 255, 255, 0.08);
+  --input:                rgba(0, 0, 0, 0.06);
   --ring:                 var(--accent);
   --radius:               0.5rem;
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
-* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.14) transparent; }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.14); border-radius: 2px; }
 @media (hover: hover) and (pointer: fine) {
-  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.22); }
 }
 
 /* ─── Base ───────────────────────────────────────────────────────────────────── */
@@ -65,24 +75,58 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ─── Background ─────────────────────────────────────────────────────────────── */
+/* ─── Background — macOS Sonoma-style pastel aurora ─────────────────────────── */
 .app-bg {
   position: fixed;
   inset: 0;
-  background: var(--bg);
+  background: #eaecf6;
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99,102,241,0.18) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 15% 85%, rgba(139,92,246,0.07) 0%, transparent 50%),
-    radial-gradient(ellipse 30% 30% at 85% 70%, rgba(56,189,248,0.05) 0%, transparent 50%);
+    /* Top periwinkle bloom — primary aurora */
+    radial-gradient(ellipse 130% 55% at 50% -8%,  rgba(176, 183, 255, 0.75) 0%, transparent 62%),
+    /* Upper-left lavender cloud */
+    radial-gradient(ellipse 65% 55% at  5% 18%,   rgba(196, 181, 253, 0.55) 0%, transparent 60%),
+    /* Lower-right sky-blue shimmer */
+    radial-gradient(ellipse 55% 50% at 96% 76%,   rgba(125, 211, 252, 0.45) 0%, transparent 56%),
+    /* Mid-screen rose blush */
+    radial-gradient(ellipse 45% 40% at 72% 44%,   rgba(251, 207, 232, 0.55) 0%, transparent 54%),
+    /* Bottom-left mint ambient */
+    radial-gradient(ellipse 40% 38% at  4% 88%,   rgba(167, 243, 208, 0.35) 0%, transparent 52%);
 }
 
-/* ─── Glass panel ────────────────────────────────────────────────────────────── */
+/* ─── Apple-quality liquid glass panel ──────────────────────────────────────── */
 .glass {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(40px) saturate(180%) brightness(1.02);
+  -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(1.02);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    /* Top specular — the Apple signature */
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.95),
+    /* Bottom inside edge */
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04),
+    /* Left specular */
+    inset 1px 0 0 rgba(255, 255, 255, 0.55),
+    /* Right edge */
+    inset -1px 0 0 rgba(255, 255, 255, 0.25),
+    /* Hairline outer border */
+    0 0 0 0.5px rgba(0, 0, 0, 0.1),
+    /* Soft drop shadow */
+    0 8px 40px rgba(60, 60, 120, 0.12),
+    0 2px 8px rgba(60, 60, 120, 0.08);
+}
+
+/* Elevated glass — modals, toasts */
+.glass-elevated {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(48px) saturate(200%) brightness(1.04);
+  -webkit-backdrop-filter: blur(48px) saturate(200%) brightness(1.04);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03),
+    0 0 0 0.5px rgba(0, 0, 0, 0.1),
+    0 24px 64px rgba(60, 60, 120, 0.18),
+    0 4px 16px rgba(60, 60, 120, 0.1);
 }
 
 /* ─── Search input ───────────────────────────────────────────────────────────── */
@@ -109,7 +153,7 @@ body {
 /* ─── Search result hover ────────────────────────────────────────────────────── */
 @media (hover: hover) and (pointer: fine) {
   .search-result-row:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(0, 0, 0, 0.035);
   }
 }
 
@@ -123,11 +167,17 @@ body {
   100% { background-position:  200% center; }
 }
 
+@keyframes moveBackground {
+  from { background-position: 0% 0%; }
+  to   { background-position: 0% -2000px; }
+}
+
 /* ─── Progress bar ───────────────────────────────────────────────────────────── */
 .progress-bar {
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  transition: width 0.25s var(--ease-out);
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), #818cf8);
+  background-size: 200% 100%;
+  transition: width 0.3s var(--ease-out);
+  animation: shimmer 2s linear infinite;
 }
 
 /* ─── prefers-reduced-motion ─────────────────────────────────────────────────── */

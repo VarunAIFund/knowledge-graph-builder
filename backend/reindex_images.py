@@ -52,18 +52,31 @@ try:
 except Exception as e:
     print(f"✗ Server not reachable: {e}"); sys.exit(1)
 
+PROGRESS_FILE = Path(__file__).parent / ".reindex_progress"
+
+def load_progress() -> set:
+    if PROGRESS_FILE.exists():
+        return set(PROGRESS_FILE.read_text().splitlines())
+    return set()
+
+def save_progress(done: set):
+    PROGRESS_FILE.write_text("\n".join(done))
+
 print("Scanning Desktop for images (skipping dataset folders)...\n")
 images = list(find_images(DESKTOP))
-print(f"\nFound {len(images)} images to index\n")
+done   = load_progress()
+todo   = [img for img in images if str(img) not in done]
+print(f"\nFound {len(images)} images — {len(done)} already done, {len(todo)} to index\n")
 
 ok = errors = 0
-for i, img in enumerate(images, 1):
-    print(f"  [{i:4}/{len(images)}]  {img.name[:55]:55}", end="  ", flush=True)
+for i, img in enumerate(todo, 1):
+    print(f"  [{i:4}/{len(todo)}]  {img.name[:55]:55}", end="  ", flush=True)
     try:
         resp = post("/api/embed", {"path": str(img), "type": "image"})
         if resp.get("embedding"):
             preview = (resp.get("preview") or "")[:80]
             print(f"✓  {preview}")
+            done.add(str(img))
             ok += 1
         else:
             print(f"✗  {resp.get('error','no embedding')}")
@@ -72,4 +85,11 @@ for i, img in enumerate(images, 1):
         print(f"✗  {e}")
         errors += 1
 
+    if i % 20 == 0:
+        save_progress(done)
+
+save_progress(done)
 print(f"\nDone: {ok} captioned, {errors} errors")
+if PROGRESS_FILE.exists() and len(done) >= len(images):
+    PROGRESS_FILE.unlink()
+    print("Progress file cleaned up — all images indexed!")

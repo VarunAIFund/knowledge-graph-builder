@@ -9,9 +9,9 @@ import { format } from "date-fns";
 import type { FileNode } from "@/types";
 import { FILE_TYPE_COLORS, formatBytes } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LiquidButton } from "@/components/ui/liquid-glass-button";
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
   image: Image,
@@ -45,7 +45,7 @@ export default function FileDetails({ file, onClose }: Props) {
       exit={{ x: 340, opacity: 0 }}
       transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
       style={{ willChange: "transform, opacity" }}
-      className="glass fixed right-4 top-[72px] bottom-4 w-[320px] rounded-xl z-50 flex flex-col overflow-hidden"
+      className="glass fixed right-4 top-[72px] bottom-4 w-[320px] rounded-2xl z-50 flex flex-col overflow-hidden"
     >
       <ScrollArea className="flex-1">
         <div className="p-5 flex flex-col gap-5">
@@ -54,13 +54,26 @@ export default function FileDetails({ file, onClose }: Props) {
             <Badge
               variant="outline"
               className="text-[11px] font-medium"
-              style={{ color, borderColor: `${color}40`, backgroundColor: `${color}12` }}
+              style={{
+                color,
+                borderColor: `${color}50`,
+                backgroundColor: `${color}12`,
+              }}
             >
               {file.type}
             </Badge>
             <button
               onClick={onClose}
-              className="pressable w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-white/[0.08] transition-colors"
+              className="pressable w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+              style={{ color: "var(--text-muted)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(0,0,0,0.06)";
+                e.currentTarget.style.color = "var(--text)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "";
+                e.currentTarget.style.color = "var(--text-muted)";
+              }}
             >
               <X size={14} />
             </button>
@@ -73,23 +86,24 @@ export default function FileDetails({ file, onClose }: Props) {
               style={{
                 backgroundColor: `${color}14`,
                 border: `1px solid ${color}28`,
+                boxShadow: `inset 0 1px 0 rgba(255,255,255,0.8)`,
               }}
             >
               <Icon size={24} style={{ color }} />
             </div>
             <div className="space-y-1 w-full">
-              <p className="text-[15px] font-semibold text-slate-100 leading-tight break-words px-2">
+              <p className="text-[15px] font-semibold leading-tight break-words px-2" style={{ color: "var(--text)" }}>
                 {file.name}
               </p>
               {file.ext && (
-                <p className="text-[11px] text-slate-400 font-mono uppercase tracking-wider">
+                <p className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
                   .{file.ext}
                 </p>
               )}
             </div>
           </div>
 
-          <Separator className="bg-white/[0.07]" />
+          <Separator style={{ background: "rgba(0,0,0,0.07)" }} />
 
           {/* Metadata */}
           <div className="flex flex-col gap-3">
@@ -118,13 +132,20 @@ export default function FileDetails({ file, onClose }: Props) {
           {/* AI Summary */}
           {file.preview && (
             <>
-              <Separator className="bg-white/[0.07]" />
+              <Separator style={{ background: "rgba(0,0,0,0.07)" }} />
               <div className="space-y-2">
-                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
                   Summary
                 </p>
-                <div className="rounded-lg bg-white/[0.04] border border-white/[0.07] p-3">
-                  <p className="text-[13px] text-slate-300 leading-relaxed">
+                <div
+                  className="rounded-xl p-3"
+                  style={{
+                    background: "rgba(0,0,0,0.03)",
+                    border: "1px solid rgba(0,0,0,0.06)",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)",
+                  }}
+                >
+                  <p className="text-[13px] leading-relaxed" style={{ color: "var(--text)" }}>
                     {file.preview}
                   </p>
                 </div>
@@ -138,36 +159,34 @@ export default function FileDetails({ file, onClose }: Props) {
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{
                 background: file.embedding ? "var(--green)" : "var(--text-dim)",
+                boxShadow: file.embedding ? "0 0 5px rgba(52,199,89,0.5)" : "none",
               }}
             />
-            <span
-              className="text-[12px]"
-              style={{ color: file.embedding ? "var(--green)" : "var(--text-muted)" }}
-            >
+            <span className="text-[12px]" style={{ color: file.embedding ? "var(--green)" : "var(--text-muted)" }}>
               {file.embedding ? "Indexed · semantic search ready" : "Not indexed"}
             </span>
           </div>
 
           {/* Path */}
-          <p
-            className="font-mono text-[10px] break-all leading-relaxed"
-            style={{ color: "var(--text-dim)" }}
-          >
+          <p className="font-mono text-[10px] break-all leading-relaxed" style={{ color: "var(--text-dim)" }}>
             {file.path}
           </p>
         </div>
       </ScrollArea>
 
-      {/* Footer action */}
-      <div className="p-4 border-t border-white/[0.07]">
-        <Button
+      {/* Footer */}
+      <div
+        className="p-4"
+        style={{ borderTop: "1px solid rgba(0,0,0,0.07)" }}
+      >
+        <LiquidButton
+          size="default"
+          className="w-full"
           onClick={openFile}
-          variant="outline"
-          className="w-full gap-2 h-9 text-[13px] border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-slate-100"
         >
           <ExternalLink size={13} />
           Open in Finder
-        </Button>
+        </LiquidButton>
       </div>
     </motion.div>
   );
@@ -186,7 +205,7 @@ function MetaRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 text-slate-400 min-w-0">
+      <div className="flex items-center gap-2 min-w-0" style={{ color: "var(--text-muted)" }}>
         {icon}
         <span className="text-[12px] font-medium">{label}</span>
       </div>

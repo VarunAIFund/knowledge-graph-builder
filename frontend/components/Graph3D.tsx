@@ -237,19 +237,19 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     [highlightIds]
   );
 
-  // Link color
+  // Link color — higher alpha floor for light-mode readability
   const linkColor = useCallback(
     (link: object) => {
       const l = link as { value?: number; source?: unknown; target?: unknown };
       const score = l.value ?? 0.75;
-      const alpha = 0.2 + score * 0.5;
+      const alpha = 0.35 + score * 0.45;
       const srcId = typeof l.source === "string" ? l.source : (l.source as FileNode)?.id;
       const srcNode = data.nodes.find((n) => n.id === srcId) as FileNode | undefined;
       if (srcNode?.community !== undefined) {
         const c = TOPIC_PALETTE[srcNode.community % TOPIC_PALETTE.length];
         return hexToRgba(c, alpha);
       }
-      return hexToRgba("#6366f1", 0.22 + score * 0.3);
+      return hexToRgba("#6366f1", 0.38 + score * 0.35);
     },
     [data.nodes]
   );
@@ -323,8 +323,8 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             fontFamily: "var(--font-outfit)",
             fontWeight: item.isTopic ? 700 : 500,
             fontSize: item.isTopic ? 12 : 10,
-            color: item.isTopic ? item.color : "rgba(255,255,255,0.7)",
-            textShadow: "0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.9)",
+            color: item.isTopic ? item.color : "rgba(28,28,30,0.65)",
+            textShadow: "0 1px 3px rgba(255,255,255,0.9), 0 0 8px rgba(255,255,255,0.8)",
             letterSpacing: item.isTopic ? "0.02em" : "0",
           }}
         >
@@ -332,48 +332,79 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
         </div>
       ))}
 
-      {/* Tooltip */}
+      {/* Tooltip — liquid glass */}
       {hovered && (
         <div
           style={{
             position: "fixed",
             left: tooltipPos.x,
             top: tooltipPos.y,
-            background: "rgba(13,15,20,0.92)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 8,
-            padding: "8px 12px",
-            fontSize: 12,
             pointerEvents: "none",
             zIndex: 100,
-            maxWidth: 280,
-            backdropFilter: "blur(16px)",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+            maxWidth: 260,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <span
+          {/* Apple glass tooltip */}
+          <div
+            style={{
+              backdropFilter: "blur(40px) saturate(180%)",
+              WebkitBackdropFilter: "blur(40px) saturate(180%)",
+              background: "rgba(255, 255, 255, 0.82)",
+              border: "1px solid rgba(255, 255, 255, 0.85)",
+              borderRadius: 12,
+              padding: "9px 13px",
+              boxShadow: [
+                "inset 0 1.5px 0 rgba(255,255,255,1)",
+                "inset 0 -1px 0 rgba(0,0,0,0.04)",
+                "0 0 0 0.5px rgba(0,0,0,0.1)",
+                "0 8px 24px rgba(60,60,120,0.16)",
+                "0 2px 6px rgba(60,60,120,0.08)",
+              ].join(", "),
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+              <span
+                style={{
+                  width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                  background: getCommunityColor(hovered.community, hovered.type),
+                  boxShadow: `0 0 6px ${getCommunityColor(hovered.community, hovered.type)}70`,
+                }}
+              />
+              <span
+                style={{
+                  color: "rgba(110,110,115,0.9)",
+                  fontSize: 9,
+                  fontFamily: "var(--font-space-mono)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  fontWeight: 600,
+                }}
+              >
+                {hovered.community !== undefined
+                  ? topicLabels.get(hovered.community) ?? hovered.type
+                  : hovered.type}
+                {hovered.degree ? ` · ${hovered.degree}` : ""}
+              </span>
+            </div>
+            <div
               style={{
-                width: 8, height: 8, borderRadius: "50%",
-                background: getCommunityColor(hovered.community, hovered.type),
-                flexShrink: 0,
-                boxShadow: `0 0 6px ${getCommunityColor(hovered.community, hovered.type)}80`,
+                color: "#1c1c1e",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontFamily: "var(--font-outfit)",
+                fontWeight: 500,
+                fontSize: 13,
+                letterSpacing: "-0.01em",
               }}
-            />
-            <span style={{ color: "#94a3b8", fontSize: 10, fontFamily: "var(--font-space-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              {hovered.community !== undefined
-                ? topicLabels.get(hovered.community) ?? hovered.type
-                : hovered.type}
-              {hovered.degree ? ` · ${hovered.degree} link${hovered.degree !== 1 ? "s" : ""}` : ""}
-            </span>
-          </div>
-          <div style={{ color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-outfit)", fontWeight: 500 }}>
-            {hovered.name}
+            >
+              {hovered.name}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Topic legend — bottom left */}
+      {/* Topic legend — liquid glass, bottom left */}
       {communities.size > 0 && (
         <div
           style={{
@@ -381,38 +412,83 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             bottom: 80,
             left: 16,
             zIndex: 30,
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            padding: "10px 14px",
-            background: "rgba(13,15,20,0.88)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 10,
-            backdropFilter: "blur(16px)",
-            boxShadow: "0 2px 16px rgba(0,0,0,0.5)",
           }}
         >
-          <div style={{ fontSize: 9, color: "#64748b", fontFamily: "var(--font-space-mono)", letterSpacing: "0.12em", marginBottom: 4, textTransform: "uppercase" }}>
-            topics
+          <div
+            style={{
+              backdropFilter: "blur(40px) saturate(180%)",
+              WebkitBackdropFilter: "blur(40px) saturate(180%)",
+              background: "rgba(255, 255, 255, 0.78)",
+              border: "1px solid rgba(255,255,255,0.88)",
+              borderRadius: 14,
+              padding: "11px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 5,
+              boxShadow: [
+                "inset 0 1.5px 0 rgba(255,255,255,1)",
+                "inset 0 -1px 0 rgba(0,0,0,0.04)",
+                "0 0 0 0.5px rgba(0,0,0,0.1)",
+                "0 8px 32px rgba(60,60,120,0.14)",
+                "0 2px 8px rgba(60,60,120,0.08)",
+              ].join(", "),
+            }}
+          >
+            <div
+              style={{
+                fontSize: 8,
+                color: "rgba(110,110,115,0.7)",
+                fontFamily: "var(--font-space-mono)",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                marginBottom: 3,
+                fontWeight: 700,
+              }}
+            >
+              clusters
+            </div>
+            {Array.from(communities.entries())
+              .sort((a, b) => b[1].length - a[1].length)
+              .slice(0, 8)
+              .map(([cId, nodes]) => {
+                const color = TOPIC_PALETTE[cId % TOPIC_PALETTE.length];
+                const label = topicLabels.get(cId) ?? `Topic ${cId}`;
+                return (
+                  <div key={cId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div
+                      style={{
+                        width: 6, height: 6, borderRadius: "50%",
+                        background: color, flexShrink: 0,
+                        boxShadow: `0 0 6px ${color}80`,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "#1c1c1e",
+                        fontFamily: "var(--font-outfit)",
+                        fontWeight: 500,
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      {label}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "rgba(110,110,115,0.7)",
+                        marginLeft: "auto",
+                        fontFamily: "var(--font-space-mono)",
+                        paddingLeft: 12,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {nodes.length}
+                    </span>
+                  </div>
+                );
+              })}
           </div>
-          {Array.from(communities.entries())
-            .sort((a, b) => b[1].length - a[1].length)
-            .slice(0, 8)
-            .map(([cId, nodes]) => {
-              const color = TOPIC_PALETTE[cId % TOPIC_PALETTE.length];
-              const label = topicLabels.get(cId) ?? `Topic ${cId}`;
-              return (
-                <div key={cId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0, boxShadow: `0 0 5px ${color}60` }} />
-                  <span style={{ fontSize: 11, color: "#e2e8f0", fontFamily: "var(--font-outfit)", fontWeight: 500 }}>
-                    {label}
-                  </span>
-                  <span style={{ fontSize: 10, color: "#475569", marginLeft: "auto", fontFamily: "var(--font-space-mono)", paddingLeft: 12 }}>
-                    {nodes.length}
-                  </span>
-                </div>
-              );
-            })}
         </div>
       )}
     </>
