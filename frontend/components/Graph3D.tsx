@@ -10,7 +10,9 @@ interface Props {
   highlightIds?: Set<string>;
 }
 
-// ── 6 clean topic colors ─────────────────────────────────────────────────────
+const MIN_CLUSTER = 5;
+
+// ── Topic palette ─────────────────────────────────────────────────────────────
 const TOPIC_PALETTE = [
   "#6366f1", // indigo
   "#ec4899", // pink
@@ -31,26 +33,6 @@ const TYPE_TO_TOPIC: Record<string, string> = {
   other:  "Files",
 };
 
-function getTopicLabel(nodes: FileNode[]): string {
-  // Use the most common top-level Desktop subfolder as the label
-  const segCounts: Record<string, number> = {};
-  for (const n of nodes) {
-    const parts = (n.path ?? "").split("/").filter(Boolean);
-    const desktopIdx = parts.indexOf("Desktop");
-    const seg = desktopIdx >= 0 && parts[desktopIdx + 1]
-      ? parts[desktopIdx + 1]
-      : parts[parts.length - 2];
-    if (seg) segCounts[seg] = (segCounts[seg] ?? 0) + 1;
-  }
-  const dominant = Object.entries(segCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
-  if (dominant) return dominant;
-  // Fallback to file type
-  const typeCounts: Record<string, number> = {};
-  for (const n of nodes) typeCounts[n.type] = (typeCounts[n.type] ?? 0) + 1;
-  const domType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
-  return TYPE_TO_TOPIC[domType ?? "other"] ?? "Files";
-}
-
 function getCommunityColor(communityId: number | undefined, fileType: string): string {
   if (communityId !== undefined && communityId !== null) {
     return TOPIC_PALETTE[communityId % TOPIC_PALETTE.length];
@@ -70,6 +52,7 @@ type LabelItem = { id: string; x: number; y: number; label: string; color: strin
 export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<ForceGraphMethods<any, any>>();
+  const haloCanvasRef = useRef<HTMLCanvasElement>(null);
   const hasZoomed = useRef(false);
   const [hovered, setHovered] = useState<FileNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -91,26 +74,55 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     hasZoomed.current = false;
   }, [data]);
 
-  // Community → nodes
+  // ── Community map ─────────────────────────────────────────────────────────
   const communities = useMemo(() => {
     const map = new Map<number, FileNode[]>();
     for (const node of data.nodes) {
       const n = node as FileNode;
       if (n.community !== undefined && n.community !== null) {
-        const c = n.community;
-        if (!map.has(c)) map.set(c, []);
-        map.get(c)!.push(n);
+        if (!map.has(n.community)) map.set(n.community, []);
+        map.get(n.community)!.push(n);
       }
     }
     return map;
   }, [data.nodes]);
 
-  // Fetch AI-generated cluster labels from Gemini when communities load
+  // ── Filter small clusters ─────────────────────────────────────────────────
+  const filteredData = useMemo(() => {
+    const smallCIds = new Set<number>();
+    communities.forEach((nodes, cId) => {
+      if (nodes.length <= MIN_CLUSTER) smallCIds.add(cId);
+    });
+    if (smallCIds.size === 0) return data;
+    const validIds = new Set(
+      data.nodes
+        .filter(n => (n as FileNode).community === undefined || !smallCIds.has((n as FileNode).community!))
+        .map(n => (n as FileNode).id)
+    );
+    return {
+      nodes: data.nodes.filter(n => validIds.has((n as FileNode).id)),
+      links: data.links.filter(l => {
+        const s = typeof l.source === "string" ? l.source : (l.source as FileNode).id;
+        const t = typeof l.target === "string" ? l.target : (l.target as FileNode).id;
+        return validIds.has(s) && validIds.has(t);
+      }),
+    };
+  }, [data, communities]);
+
+  // ── O(1) node lookup ──────────────────────────────────────────────────────
+  const nodeById = useMemo(() => {
+    const m = new Map<string, FileNode>();
+    for (const n of data.nodes) m.set((n as FileNode).id, n as FileNode);
+    return m;
+  }, [data.nodes]);
+
+  // ── Fetch AI cluster labels ───────────────────────────────────────────────
   useEffect(() => {
     if (communities.size === 0) return;
     const payload: Record<string, { name: string; preview?: string; type: string }[]> = {};
     communities.forEach((nodes, cId) => {
-      payload[String(cId)] = nodes.map(n => ({ name: n.name, preview: n.preview, type: n.type }));
+      if (nodes.length > MIN_CLUSTER)
+        payload[String(cId)] = nodes.map(n => ({ name: n.name, preview: n.preview, type: n.type }));
     });
     fetch("/api/cluster-labels", {
       method: "POST",
@@ -128,22 +140,20 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
       .catch(() => {});
   }, [communities]);
 
-  // Community → AI-generated label only
-  const topicLabels = useMemo(() => aiLabels, [aiLabels]);
-
-  // Community → highest-degree node id
+  // ── Community centers (highest-degree node) ───────────────────────────────
   const communityCenters = useMemo(() => {
     const centers = new Map<number, string>();
-    Array.from(communities.entries()).forEach(([cId, nodes]) => {
-      const top = nodes.reduce((a: FileNode, b: FileNode) =>
-        ((a.degree ?? 0) >= (b.degree ?? 0) ? a : b)
-      );
+    communities.forEach((nodes, cId) => {
+      if (nodes.length <= MIN_CLUSTER) return;
+      const top = nodes.reduce((a, b) => ((a.degree ?? 0) >= (b.degree ?? 0) ? a : b));
       centers.set(cId, top.id);
     });
     return centers;
   }, [communities]);
 
-  // Fallback when no community data: group by file type, label the hub of each type
+  const hubNodeIds = useMemo(() => new Set(communityCenters.values()), [communityCenters]);
+
+  // ── Fallback file-type centers ────────────────────────────────────────────
   const fileTypeCenters = useMemo(() => {
     if (communities.size > 0) return new Map<string, string>();
     const groups = new Map<string, FileNode[]>();
@@ -152,127 +162,196 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
       if (!groups.has(fn.type)) groups.set(fn.type, []);
       groups.get(fn.type)!.push(fn);
     }
-    const centers = new Map<string, string>(); // fileType → nodeId
+    const centers = new Map<string, string>();
     groups.forEach((nodes, type) => {
-      const top = nodes.reduce((a: FileNode, b: FileNode) =>
-        ((a.degree ?? 0) >= (b.degree ?? 0) ? a : b)
-      );
+      const top = nodes.reduce((a, b) => ((a.degree ?? 0) >= (b.degree ?? 0) ? a : b));
       if ((top.degree ?? 0) > 0) centers.set(type, top.id);
     });
     return centers;
   }, [communities.size, data.nodes]);
 
-  // nodeId → topic label string (covers both community and file-type modes)
+  // ── nodeId → label ────────────────────────────────────────────────────────
   const nodeLabelMap = useMemo(() => {
     const map = new Map<string, { label: string; isTopic: boolean }>();
-    // Community mode
     communityCenters.forEach((nodeId, cId) => {
-      map.set(nodeId, { label: topicLabels.get(cId) ?? `Topic ${cId}`, isTopic: true });
+      map.set(nodeId, { label: aiLabels.get(cId) ?? `Topic ${cId}`, isTopic: true });
     });
-    // Fallback file-type mode
     fileTypeCenters.forEach((nodeId, type) => {
       if (!map.has(nodeId))
         map.set(nodeId, { label: TYPE_TO_TOPIC[type] ?? type, isTopic: true });
     });
     return map;
-  }, [communityCenters, fileTypeCenters, topicLabels]);
+  }, [communityCenters, fileTypeCenters, aiLabels]);
 
-  // Nodes to label: all topic centers + top 15 connected nodes by val
   const labelNodeIds = useMemo(() => {
     const ids = new Set<string>(nodeLabelMap.keys());
-    [...data.nodes]
+    [...filteredData.nodes]
       .sort((a, b) => ((b as FileNode).val ?? 0) - ((a as FileNode).val ?? 0))
-      .slice(0, 15)
-      .forEach((n) => ids.add((n as FileNode).id));
+      .slice(0, 12)
+      .forEach(n => ids.add((n as FileNode).id));
     return ids;
-  }, [nodeLabelMap, data.nodes]);
+  }, [nodeLabelMap, filteredData.nodes]);
 
-  // HTML label overlay — updates every animation frame using graph→screen coords
+  // ── Throttled RAF: labels + cluster halos ─────────────────────────────────
   useEffect(() => {
     let rafId: number;
-    const tick = () => {
+    let lastUpdate = 0;
+
+    const tick = (timestamp: number) => {
       if (!fgRef.current) { rafId = requestAnimationFrame(tick); return; }
-      const items: LabelItem[] = [];
-      for (const rawNode of data.nodes) {
-        const n = rawNode as FileNode & { x?: number; y?: number };
-        if (!labelNodeIds.has(n.id) || n.x === undefined || n.y === undefined) continue;
-        const screen = fgRef.current.graph2ScreenCoords(n.x, n.y);
-        const topicEntry = nodeLabelMap.get(n.id);
-        const isTopic = topicEntry?.isTopic ?? false;
-        const label = topicEntry
-          ? topicEntry.label
-          : (n.name.length > 22 ? n.name.slice(0, 20) + "…" : n.name);
-        items.push({ id: n.id, x: screen.x, y: screen.y, label, color: getCommunityColor(n.community, n.type), isTopic });
+
+      if (timestamp - lastUpdate >= 50) {
+        lastUpdate = timestamp;
+
+        // Update HTML label positions
+        const items: LabelItem[] = [];
+        for (const rawNode of filteredData.nodes) {
+          const n = rawNode as FileNode & { x?: number; y?: number };
+          if (!labelNodeIds.has(n.id) || n.x === undefined || n.y === undefined) continue;
+          const screen = fgRef.current.graph2ScreenCoords(n.x, n.y);
+          const topicEntry = nodeLabelMap.get(n.id);
+          const isTopic = topicEntry?.isTopic ?? false;
+          const label = topicEntry
+            ? topicEntry.label
+            : (n.name.length > 22 ? n.name.slice(0, 20) + "…" : n.name);
+          items.push({ id: n.id, x: screen.x, y: screen.y, label, color: getCommunityColor(n.community, n.type), isTopic });
+        }
+        setLabelItems(items);
+
+        // Draw cluster halos on the background canvas
+        const haloCtx = haloCanvasRef.current?.getContext("2d");
+        if (haloCtx) {
+          haloCtx.clearRect(0, 0, dimensions.width, dimensions.height);
+          communities.forEach((nodes, cId) => {
+            if (nodes.length <= MIN_CLUSTER) return;
+            const positions = nodes
+              .map(n => {
+                const fn = n as FileNode & { x?: number; y?: number };
+                if (fn.x === undefined || fn.y === undefined) return null;
+                return fgRef.current!.graph2ScreenCoords(fn.x, fn.y);
+              })
+              .filter((p): p is { x: number; y: number } => p !== null && isFinite(p.x) && isFinite(p.y));
+            if (positions.length < 2) return;
+            const cx = positions.reduce((s, p) => s + p.x, 0) / positions.length;
+            const cy = positions.reduce((s, p) => s + p.y, 0) / positions.length;
+            const spread = Math.max(...positions.map(p => Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2)));
+            const r = Math.max(60, spread * 1.4 + 50);
+            const color = TOPIC_PALETTE[cId % TOPIC_PALETTE.length];
+            const grad = haloCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
+            grad.addColorStop(0, hexToRgba(color, 0.13));
+            grad.addColorStop(0.55, hexToRgba(color, 0.06));
+            grad.addColorStop(1, hexToRgba(color, 0));
+            haloCtx.beginPath();
+            haloCtx.arc(cx, cy, r, 0, Math.PI * 2);
+            haloCtx.fillStyle = grad;
+            haloCtx.fill();
+          });
+        }
       }
-      setLabelItems(items);
+
       rafId = requestAnimationFrame(tick);
     };
+
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [data.nodes, labelNodeIds, nodeLabelMap]);
+  }, [filteredData.nodes, labelNodeIds, nodeLabelMap, communities, dimensions]);
 
-  // 2D canvas node rendering — no text, just geometry
+  // ── Node rendering ────────────────────────────────────────────────────────
   const nodeCanvasObject = useCallback(
     (rawNode: object, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const node = rawNode as FileNode & { x: number; y: number };
       const color = getCommunityColor(node.community, node.type);
-      const radius = Math.max(3, (node.val ?? 3) * 1.4);
+      const rawVal = node.val ?? 3;
+      const radius = Math.max(3, isFinite(rawVal) ? rawVal * 1.4 : 3);
       const highlighted = highlightIds?.has(node.id);
-      const highDegree = (node.degree ?? 0) > 3;
+      const isHub = hubNodeIds.has(node.id);
 
-      // Soft glow
-      if ((highlighted || highDegree) && isFinite(node.x) && isFinite(node.y)) {
-        const glowRadius = radius * (highlighted ? 4 : 3);
-        const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowRadius);
-        gradient.addColorStop(0, hexToRgba(color, highlighted ? 0.35 : 0.2));
-        gradient.addColorStop(1, hexToRgba(color, 0));
+      if (!isFinite(node.x) || !isFinite(node.y)) return;
+
+      // Bloom glow — highlighted or hub only
+      if (highlighted || isHub) {
+        const glowR = radius * (highlighted ? 4.5 : 3.2);
+        const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowR);
+        glow.addColorStop(0, hexToRgba(color, highlighted ? 0.38 : 0.18));
+        glow.addColorStop(1, hexToRgba(color, 0));
         ctx.beginPath();
-        ctx.arc(node.x, node.y, glowRadius, 0, 2 * Math.PI);
-        ctx.fillStyle = gradient;
+        ctx.arc(node.x, node.y, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
         ctx.fill();
+      }
+
+      // Hub rings
+      if (isHub) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius + 5 / globalScale, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(color, 0.22);
+        ctx.lineWidth = 3.5 / globalScale;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius + 2.5 / globalScale, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(color, 0.6);
+        ctx.lineWidth = 1 / globalScale;
+        ctx.stroke();
       }
 
       // Highlight ring
       if (highlighted) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI);
+        ctx.arc(node.x, node.y, radius + 3 / globalScale, 0, Math.PI * 2);
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5 / globalScale;
         ctx.stroke();
       }
 
-      // Core circle
+      // Solid node body
       ctx.beginPath();
-      ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
+      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
       ctx.fillStyle = color;
       ctx.fill();
 
-      // Inner dot for indexed nodes
+      // White rim (crisp edge)
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.lineWidth = 1 / globalScale;
+      ctx.stroke();
+
+      // Clipped top-left sheen (stays inside the circle)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.arc(node.x - radius * 0.2, node.y - radius * 0.28, radius * 0.55, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fill();
+      ctx.restore();
+
+      // Indexed center dot
       if (node.indexed) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius * 0.35, 0, 2 * Math.PI);
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.arc(node.x, node.y, radius * 0.28, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
         ctx.fill();
       }
     },
-    [highlightIds]
+    [highlightIds, hubNodeIds]
   );
 
-  // Link color — higher alpha floor for light-mode readability
+  // ── Link color — O(1) lookup ──────────────────────────────────────────────
   const linkColor = useCallback(
     (link: object) => {
       const l = link as { value?: number; source?: unknown; target?: unknown };
       const score = l.value ?? 0.75;
-      const alpha = 0.35 + score * 0.45;
+      const alpha = 0.18 + score * 0.34;
       const srcId = typeof l.source === "string" ? l.source : (l.source as FileNode)?.id;
-      const srcNode = data.nodes.find((n) => n.id === srcId) as FileNode | undefined;
+      const srcNode = nodeById.get(srcId);
       if (srcNode?.community !== undefined) {
-        const c = TOPIC_PALETTE[srcNode.community % TOPIC_PALETTE.length];
-        return hexToRgba(c, alpha);
+        return hexToRgba(TOPIC_PALETTE[srcNode.community % TOPIC_PALETTE.length], alpha);
       }
-      return hexToRgba("#6366f1", 0.38 + score * 0.35);
+      return hexToRgba("#6366f1", 0.2 + score * 0.28);
     },
-    [data.nodes]
+    [nodeById]
   );
 
   const handleNodeHover = useCallback(
@@ -293,43 +372,64 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [handleMouseMove]);
 
+  // Visible communities (> MIN_CLUSTER)
+  const visibleCommunities = useMemo(() => {
+    const result = new Map<number, FileNode[]>();
+    communities.forEach((nodes, cId) => {
+      if (nodes.length > MIN_CLUSTER) result.set(cId, nodes);
+    });
+    return result;
+  }, [communities]);
+
   return (
     <>
-      <ForceGraph2D
-        ref={fgRef}
-        graphData={data as { nodes: object[]; links: object[] }}
-        nodeCanvasObject={nodeCanvasObject}
-        nodeCanvasObjectMode={() => "replace"}
-        linkColor={linkColor}
-        linkWidth={(link: object) => {
-          const l = link as { value?: number };
-          return 0.5 + (l.value ?? 0.75) * 1.5;
-        }}
-        linkDirectionalParticles={2}
-        linkDirectionalParticleSpeed={(link: object) => {
-          const l = link as { value?: number };
-          return 0.002 + (l.value ?? 0.75) * 0.006;
-        }}
-        linkDirectionalParticleWidth={1.5}
-        linkDirectionalParticleColor={linkColor}
-        backgroundColor="rgba(0,0,0,0)"
-        onNodeClick={(rawNode: object) => onNodeClick(rawNode as FileNode)}
-        onNodeHover={handleNodeHover as (node: object | null, prev: object | null) => void}
-        nodeLabel={() => ""}
-        cooldownTicks={150}
-        d3AlphaDecay={0.015}
-        d3VelocityDecay={0.25}
+      {/* ── Cluster halo canvas (behind graph) ── */}
+      <canvas
+        ref={haloCanvasRef}
         width={dimensions.width}
         height={dimensions.height - 56}
-        onEngineStop={() => {
-          if (!hasZoomed.current) {
-            hasZoomed.current = true;
-            fgRef.current?.zoomToFit(600, 48);
-          }
+        style={{
+          position: "fixed",
+          left: 0,
+          top: 56,
+          pointerEvents: "none",
+          zIndex: 1,
         }}
       />
 
-      {/* ── HTML label overlay — always crisp, tracks node positions ── */}
+      {/* ── ForceGraph (above halos) ── */}
+      <div style={{ position: "fixed", inset: 0, zIndex: 2, pointerEvents: "auto" }}>
+        <ForceGraph2D
+          ref={fgRef}
+          graphData={filteredData as { nodes: object[]; links: object[] }}
+          nodeCanvasObject={nodeCanvasObject}
+          nodeCanvasObjectMode={() => "replace"}
+          linkColor={linkColor}
+          linkWidth={(link: object) => {
+            const l = link as { value?: number };
+            return 0.3 + (l.value ?? 0.75) * 1.1;
+          }}
+          linkCurvature={0.18}
+          backgroundColor="rgba(0,0,0,0)"
+          onNodeClick={(rawNode: object) => onNodeClick(rawNode as FileNode)}
+          onNodeHover={handleNodeHover as (node: object | null, prev: object | null) => void}
+          nodeLabel={() => ""}
+          warmupTicks={100}
+          cooldownTicks={120}
+          d3AlphaDecay={0.028}
+          d3VelocityDecay={0.4}
+          width={dimensions.width}
+          height={dimensions.height - 56}
+          onEngineStop={() => {
+            if (!hasZoomed.current) {
+              hasZoomed.current = true;
+              fgRef.current?.zoomToFit(600, 48);
+            }
+          }}
+        />
+      </div>
+
+      {/* ── HTML label overlay ── */}
       {labelItems.map((item) => (
         <div
           key={item.id}
@@ -344,8 +444,8 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             fontFamily: "var(--font-outfit)",
             fontWeight: item.isTopic ? 700 : 500,
             fontSize: item.isTopic ? 12 : 10,
-            color: item.isTopic ? item.color : "rgba(28,28,30,0.65)",
-            textShadow: "0 1px 3px rgba(255,255,255,0.9), 0 0 8px rgba(255,255,255,0.8)",
+            color: item.isTopic ? item.color : "rgba(28,28,30,0.6)",
+            textShadow: "0 1px 4px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.85)",
             letterSpacing: item.isTopic ? "0.02em" : "0",
           }}
         >
@@ -353,7 +453,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
         </div>
       ))}
 
-      {/* Tooltip — liquid glass */}
+      {/* ── Tooltip ── */}
       {hovered && (
         <div
           style={{
@@ -365,7 +465,6 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             maxWidth: 260,
           }}
         >
-          {/* Apple glass tooltip */}
           <div
             style={{
               backdropFilter: "blur(40px) saturate(180%)",
@@ -402,7 +501,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
                 }}
               >
                 {hovered.community !== undefined
-                  ? topicLabels.get(hovered.community) ?? hovered.type
+                  ? aiLabels.get(hovered.community) ?? hovered.type
                   : hovered.type}
                 {hovered.degree ? ` · ${hovered.degree}` : ""}
               </span>
@@ -425,8 +524,8 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
         </div>
       )}
 
-      {/* Topic legend — liquid glass, bottom left */}
-      {communities.size > 0 && (
+      {/* ── Cluster legend (only shows clusters > MIN_CLUSTER) ── */}
+      {visibleCommunities.size > 0 && (
         <div
           style={{
             position: "fixed",
@@ -468,12 +567,12 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
             >
               clusters
             </div>
-            {Array.from(communities.entries())
+            {Array.from(visibleCommunities.entries())
               .sort((a, b) => b[1].length - a[1].length)
               .slice(0, 8)
               .map(([cId, nodes]) => {
                 const color = TOPIC_PALETTE[cId % TOPIC_PALETTE.length];
-                const label = topicLabels.get(cId) ?? `Topic ${cId}`;
+                const label = aiLabels.get(cId) ?? `Topic ${cId}`;
                 return (
                   <div key={cId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div
