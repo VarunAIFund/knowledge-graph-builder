@@ -1,38 +1,25 @@
 """
-index_desktop.py — pre-embed every file on your Desktop and save to index.json
+index_desktop.py — embed every file on your Desktop and save to LanceDB
 
 Usage:
     python index_desktop.py               # embed everything not yet indexed
     python index_desktop.py --reindex     # re-embed all files (ignore cache)
     python index_desktop.py --dry-run     # just list files, don't call Gemini
-
-The output (index.json) is loaded by the frontend on startup so you don't have
-to click "Generate Embeddings" every time.
+    python index_desktop.py --depth 3     # scan deeper (default: 3)
 """
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
 
-# Reuse all the helpers from neuralvault.py
-from neuralvault import scan_dir, embed_file, DESKTOP, EMBED_MODEL, EMBED_DIM
-
-INDEX_FILE = Path(__file__).parent / "index.json"
-
-
-def load_index() -> dict:
-    if INDEX_FILE.exists():
-        try:
-            return json.loads(INDEX_FILE.read_text())
-        except Exception:
-            pass
-    return {}
-
-
-def save_index(index: dict) -> None:
-    INDEX_FILE.write_text(json.dumps(index, indent=2))
+import neuralvault
+from neuralvault import (
+    scan_dir, embed_file,
+    lancedb_upsert_files, lancedb_save_embedding, lancedb_rebuild_all_links,
+    get_tables,
+    DESKTOP, EMBED_MODEL, EMBED_DIM,
+)
 
 
 def human_bytes(n: int) -> str:
@@ -43,76 +30,100 @@ def human_bytes(n: int) -> str:
     return f"{n:.1f} TB"
 
 
+def already_indexed_ids() -> set[str]:
+    """Return IDs of files that already have a vector in LanceDB."""
+    files_tbl, _ = get_tables()
+    try:
+        df = files_tbl.to_pandas()[["id", "vector"]]
+        from neuralvault import _vec_or_none
+        return {row["id"] for _, row in df.iterrows() if _vec_or_none(row["vector"]) is not None}
+    except Exception:
+        return set()
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Index Desktop files with Gemini embeddings")
-    parser.add_argument("--reindex", action="store_true", help="Re-embed already-indexed files")
-    parser.add_argument("--dry-run", action="store_true", help="List files without embedding")
-    parser.add_argument("--depth", type=int, default=1, help="Scan depth (default: 1)")
+    parser = argparse.ArgumentParser(description="Index Desktop files with Gemini embeddings → LanceDB")
+    parser.add_argument("--reindex",  action="store_true", help="Re-embed already-indexed files")
+    parser.add_argument("--dry-run",  action="store_true", help="List files without embedding")
+    parser.add_argument("--depth",    type=int, default=10, help="Scan depth (default: 10)")
     args = parser.parse_args()
 
     print(f"\n{'='*60}")
     print(f"  NeuralVault Desktop Indexer")
     print(f"  Model : {EMBED_MODEL} ({EMBED_DIM}d)")
     print(f"  Folder: {DESKTOP}")
+    print(f"  Depth : {args.depth} levels")
+    print(f"  Store : LanceDB (~/.neuralvault/lancedb/)")
     print(f"{'='*60}\n")
 
-    # Scan files
-    files = scan_dir(DESKTOP, args.depth)
+    # Override the module-level scan depth before scanning
+    neuralvault.SCAN_DEPTH = args.depth
+    # Suppress per-folder dataset skip messages during dry-run
+    import builtins, io
+    if args.dry_run:
+        _real_print = builtins.print
+        builtins.print = lambda *a, **k: None
+    files = scan_dir(DESKTOP, 1)
+    if args.dry_run:
+        builtins.print = _real_print
     print(f"Found {len(files)} items\n")
 
     if args.dry_run:
-        for f in files:
-            size = human_bytes(f["size"]) if f["size"] else "—"
-            print(f"  [{f['type']:7}]  {f['name']}  ({size})")
+        # Count embeddable files (non-folders) by type
+        embeddable = [f for f in files if f["type"] != "folder"]
+        by_type: dict[str, int] = {}
+        for f in embeddable:
+            by_type[f["type"]] = by_type.get(f["type"], 0) + 1
+
+        print(f"  Depth {args.depth} → {len(embeddable)} files to embed ({len(files) - len(embeddable)} folders)\n")
+        for ftype, count in sorted(by_type.items(), key=lambda x: -x[1]):
+            print(f"    {ftype:8}  {count}")
         print(f"\nDry run complete — no embeddings generated.")
         return
 
-    # Load existing index
-    index = {} if args.reindex else load_index()
-    skipped = sum(1 for f in files if f["id"] in index)
-    to_embed = [f for f in files if f["id"] not in index and f["type"] != "folder"]
+    # Upsert file metadata so every file has a row in LanceDB
+    print("Upserting file metadata into LanceDB...")
+    lancedb_upsert_files(files)
+
+    # Decide what to embed
+    done_ids  = set() if args.reindex else already_indexed_ids()
+    to_embed  = [f for f in files if f["type"] != "folder" and f["id"] not in done_ids]
+    skipped   = len(files) - len(to_embed)
 
     if skipped:
         print(f"  Skipping {skipped} already-indexed files (use --reindex to force)\n")
 
     if not to_embed:
-        print("  Everything is already indexed. Run with --reindex to refresh.\n")
+        print("  Everything is already indexed.\n")
         return
 
     print(f"  Embedding {len(to_embed)} files...\n")
 
     errors = 0
     for i, f in enumerate(to_embed, 1):
-        prefix = f"  [{i:3}/{len(to_embed)}]"
         size_str = human_bytes(f["size"]) if f["size"] else "—"
-        print(f"{prefix}  {f['type']:7}  {f['name'][:50]:50}  {size_str}", end="  ", flush=True)
+        print(f"  [{i:4}/{len(to_embed)}]  {f['type']:7}  {f['name'][:48]:48}  {size_str}", end="  ", flush=True)
 
         try:
             embedding, preview = embed_file(f["path"], f["type"])
-            index[f["id"]] = {
-                **f,
-                "embedding": embedding,
-                "preview":   preview,
-            }
+            lancedb_save_embedding(f["id"], embedding, preview)
             print("✓")
         except Exception as e:
             print(f"✗  {e}")
             errors += 1
 
-        # Save incrementally every 10 files so progress isn't lost on interrupt
-        if i % 10 == 0:
-            save_index(index)
+        # Small delay to avoid Gemini rate limiting
+        time.sleep(0.05)
 
-        # Small delay to avoid rate limiting
-        time.sleep(0.1)
-
-    save_index(index)
+    # Build similarity graph once at the end (much faster than per-file)
+    print(f"\nBuilding similarity graph...")
+    lancedb_rebuild_all_links()
 
     total = len(to_embed)
     ok    = total - errors
     print(f"\n{'='*60}")
     print(f"  Done!  {ok}/{total} files embedded  ({errors} errors)")
-    print(f"  Saved → {INDEX_FILE}")
+    print(f"  Data  → ~/.neuralvault/lancedb/")
     print(f"{'='*60}\n")
 
 
