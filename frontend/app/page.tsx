@@ -3,93 +3,92 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Zap, RefreshCw, ChevronDown, ChevronUp,
-  FileText, Image, Code, Film, Music, Folder, File, Link2,
-  Activity, Layers, Database, type LucideIcon,
+  Zap, RefreshCw, Loader2,
+  FileText, Image, Code, Film, Music, Folder, File,
+  type LucideIcon,
 } from "lucide-react";
 import type { FileNode, GraphData } from "@/types";
-import { FILE_TYPE_COLORS, FILE_TYPE_LABELS, buildLinks, formatBytes } from "@/lib/utils";
+import { FILE_TYPE_COLORS, buildLinks } from "@/lib/utils";
 import FileDetails from "@/components/FileDetails";
 import SearchBar from "@/components/SearchBar";
+import { Button } from "@/components/ui/button";
 
-// 3D graph is browser-only
 const Graph3D = dynamic(() => import("@/components/Graph3D"), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center w-full h-full">
-      <div className="text-center">
-        <div
-          style={{
-            width: 80,
-            height: 80,
-            borderRadius: "50%",
-            border: "2px solid var(--cyan)",
-            borderTopColor: "transparent",
-            animation: "spin 1s linear infinite",
-            margin: "0 auto 16px",
-          }}
-        />
-        <p className="font-orbitron" style={{ fontSize: 10, letterSpacing: "0.15em", color: "var(--text-muted)" }}>
-          INITIALIZING RENDERER
-        </p>
-      </div>
+      <Loader2 size={24} className="text-indigo-400" style={{ animation: "spin 1s linear infinite" }} />
     </div>
   ),
 });
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
-  image: Image,
-  text: FileText,
-  code: Code,
-  pdf: FileText,
-  video: Film,
-  audio: Music,
-  folder: Folder,
-  other: File,
+  image: Image, text: FileText, code: Code, pdf: FileText,
+  video: Film, audio: Music, folder: Folder, other: File,
 };
 
 export default function Home() {
-  const [files, setFiles] = useState<FileNode[]>([]);
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
+  const [files, setFiles]               = useState<FileNode[]>([]);
+  const [graphData, setGraphData]       = useState<GraphData>({ nodes: [], links: [] });
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
   const [highlightIds, setHighlightIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [isEmbedding, setIsEmbedding] = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [isEmbedding, setIsEmbedding]   = useState(false);
   const [embeddingProgress, setEmbeddingProgress] = useState(0);
-  const [embeddingCurrent, setEmbeddingCurrent] = useState("");
-  const [embeddedCount, setEmbeddedCount] = useState(0);
-  const [statsOpen, setStatsOpen] = useState(false);
-  const [filterType, setFilterType] = useState<string | null>(null);
+  const [embeddingCurrent, setEmbeddingCurrent]   = useState("");
+  const [embeddedCount, setEmbeddedCount]         = useState(0);
+  const [filterType, setFilterType]     = useState<string | null>(null);
+  const [neo4jConnected, setNeo4jConnected] = useState(false);
+  const [communityCount, setCommunityCount] = useState(0);
   const filesRef = useRef<FileNode[]>([]);
 
-  // Load files on mount
-  useEffect(() => {
-    loadFiles();
-  }, []);
+  useEffect(() => { loadFiles(); }, []);
 
+  /** Load files, then pull graph from Neo4j if available. */
   const loadFiles = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/files");
+      const res  = await fetch("/api/files");
       const data = await res.json();
       const loaded: FileNode[] = data.files ?? [];
       setFiles(loaded);
       filesRef.current = loaded;
-      setGraphData({
-        nodes: loaded,
-        links: [],
-      });
+
+      // Try fetching the Neo4j graph first
+      const graphRes = await fetch("/api/graph");
+      if (graphRes.ok) {
+        const gd = await graphRes.json();
+        if (gd.neo4j && (gd.nodes.length > 0 || gd.links.length > 0)) {
+          // Enrich Neo4j nodes with full file data (embeddings etc.) from /api/files
+          const fileMap = Object.fromEntries(loaded.map((f) => [f.id, f]));
+          const mergedNodes = gd.nodes.map((n: Record<string, unknown>) => ({
+            ...(fileMap[n.id as string] ?? {}),
+            ...n,
+            // Use val from Neo4j (degree-boosted) if present
+            val: n.degree
+              ? Math.max(2, Math.min(12, (n.baseVal as number ?? 3) + Math.round((n.degree as number) * 0.8)))
+              : (fileMap[n.id as string]?.val ?? 3),
+          }));
+          setGraphData({ nodes: mergedNodes, links: gd.links });
+          setNeo4jConnected(true);
+          setCommunityCount(gd.communities ?? 0);
+        } else {
+          // Neo4j has no data yet — build links client-side from loaded embeddings
+          setGraphData({ nodes: loaded, links: buildLinks(loaded) });
+          setNeo4jConnected(gd.neo4j ?? false);
+        }
+      } else {
+        setGraphData({ nodes: loaded, links: buildLinks(loaded) });
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Generate embeddings for all files
   const generateEmbeddings = useCallback(async () => {
     if (isEmbedding) return;
     setIsEmbedding(true);
     setEmbeddingProgress(0);
-
     const current = [...filesRef.current];
     const updated = [...current];
 
@@ -104,18 +103,13 @@ export default function Home() {
         });
         if (res.ok) {
           const { embedding, preview } = await res.json();
-          if (embedding) {
-            updated[i] = { ...file, embedding, preview };
-          }
+          if (embedding) updated[i] = { ...file, embedding, preview };
         }
-      } catch {
-        // skip failed files silently
-      }
-      const progress = ((i + 1) / current.length) * 100;
-      setEmbeddingProgress(progress);
+      } catch { /* skip */ }
+      setEmbeddingProgress(((i + 1) / current.length) * 100);
       setEmbeddedCount(i + 1);
 
-      // Update graph incrementally every 5 files
+      // Incremental client-side graph update every 5 files
       if (i % 5 === 0 || i === current.length - 1) {
         const links = buildLinks(updated);
         setFiles([...updated]);
@@ -126,9 +120,31 @@ export default function Home() {
 
     setIsEmbedding(false);
     setEmbeddingCurrent("");
+
+    // After all embeddings done, refresh graph from Neo4j for community data
+    setTimeout(async () => {
+      try {
+        const graphRes = await fetch("/api/graph");
+        if (graphRes.ok) {
+          const gd = await graphRes.json();
+          if (gd.neo4j && gd.nodes.length > 0) {
+            const fileMap = Object.fromEntries(filesRef.current.map((f) => [f.id, f]));
+            const mergedNodes = gd.nodes.map((n: Record<string, unknown>) => ({
+              ...(fileMap[n.id as string] ?? {}),
+              ...n,
+              val: n.degree
+                ? Math.max(2, Math.min(12, (n.baseVal as number ?? 3) + Math.round((n.degree as number) * 0.8)))
+                : (fileMap[n.id as string]?.val ?? 3),
+            }));
+            setGraphData({ nodes: mergedNodes, links: gd.links });
+            setNeo4jConnected(true);
+            setCommunityCount(gd.communities ?? 0);
+          }
+        }
+      } catch { /* ignore */ }
+    }, 3000); // wait 3s for background link-building to finish
   }, [isEmbedding]);
 
-  // Apply type filter to graph
   const filteredGraphData: GraphData = filterType
     ? {
         nodes: graphData.nodes.filter((n) => n.type === filterType),
@@ -141,270 +157,155 @@ export default function Home() {
       }
     : graphData;
 
-  // Count by type
   const typeCounts = files.reduce<Record<string, number>>((acc, f) => {
     acc[f.type] = (acc[f.type] ?? 0) + 1;
     return acc;
   }, {});
-
-  const totalSize = files.reduce((acc, f) => acc + (f.size ?? 0), 0);
   const embCount = files.filter((f) => f.embedding).length;
 
   return (
-    <div className="neural-bg w-screen h-screen">
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+    <div className="app-bg w-screen h-screen">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <header
-        className="glass"
+        className="glass fixed top-0 left-0 z-40 flex items-center justify-between px-5"
         style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: selectedFile ? 352 : 0,
-          height: 60,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 24px",
-          zIndex: 40,
-          borderLeft: "none",
-          borderRight: "none",
-          borderTop: "none",
-          borderRadius: 0,
-          transition: "right 0.4s ease",
+          right: selectedFile ? 336 : 0,
+          height: 56,
+          borderLeft: "none", borderRight: "none", borderTop: "none", borderRadius: 0,
+          transition: "right 0.32s cubic-bezier(0.32, 0.72, 0, 1)",
         }}
       >
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              border: "1.5px solid var(--cyan)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "radial-gradient(circle, rgba(0,212,255,0.15) 0%, transparent 70%)",
-            }}
-          >
-            <Activity size={14} color="var(--cyan)" />
-          </div>
-          <div>
-            <span className="font-orbitron font-black neon-cyan logo-flicker" style={{ fontSize: 16, letterSpacing: "0.08em" }}>
-              NEURAL
-            </span>
-            <span className="font-orbitron font-black neon-magenta" style={{ fontSize: 16, letterSpacing: "0.08em" }}>
-              VAULT
-            </span>
-          </div>
-          <div
-            style={{
-              width: 1,
-              height: 24,
-              background: "var(--border)",
-              margin: "0 8px",
-            }}
-          />
-          <span className="font-orbitron" style={{ fontSize: 8, letterSpacing: "0.18em", color: "var(--text-muted)" }}>
-            DESKTOP INTELLIGENCE
+          <span className="font-orbitron font-black text-[15px] tracking-wide text-slate-100">
+            Neural<span className="text-indigo-400">Vault</span>
+          </span>
+          <span className="text-slate-700 select-none">·</span>
+          <span className="text-[12px] text-slate-500 font-medium hidden sm:block">
+            Desktop Intelligence
           </span>
         </div>
 
-        {/* Stats bar */}
-        <div className="flex items-center gap-6">
-          <StatChip icon={<Layers size={11} />} label="FILES" value={files.length} color="var(--cyan)" />
-          <StatChip icon={<Database size={11} />} label="INDEXED" value={embCount} color="var(--green)" />
-          <StatChip icon={<Link2 size={11} />} label="LINKS" value={graphData.links.length} color="var(--magenta)" />
+        {/* Stats + Neo4j status */}
+        <div className="hidden md:flex items-center gap-4 text-[12px] text-slate-500">
+          <span><span className="text-slate-300 font-semibold">{files.length}</span> files</span>
+          <span><span className="text-slate-300 font-semibold">{embCount}</span> indexed</span>
+          <span><span className="text-slate-300 font-semibold">{graphData.links.length}</span> links</span>
+          {neo4jConnected && communityCount > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                style={{ boxShadow: "0 0 4px #22c55e" }}
+              />
+              <span className="text-emerald-600 text-[11px]">{communityCount} clusters</span>
+            </span>
+          )}
+        </div>
+
+        {/* Type filter */}
+        <div className="hidden lg:flex items-center gap-1">
           <button
-            onClick={() => setStatsOpen((s) => !s)}
-            className="glass flex items-center gap-1 px-3 py-1.5"
-            style={{
-              fontSize: 9,
-              fontFamily: "var(--font-orbitron)",
-              letterSpacing: "0.1em",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              borderRadius: 2,
-            }}
+            onClick={() => setFilterType(null)}
+            className={`px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors pressable ${
+              filterType === null
+                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.05]"
+            }`}
           >
-            {statsOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-            TYPES
+            All
           </button>
+          {Object.entries(typeCounts).slice(0, 5).map(([type, count]) => {
+            const color = FILE_TYPE_COLORS[type as keyof typeof FILE_TYPE_COLORS] ?? "#64748b";
+            const Icon  = TYPE_ICONS[type] ?? File;
+            return (
+              <button
+                key={type}
+                onClick={() => setFilterType(filterType === type ? null : type)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors pressable ${
+                  filterType === type ? "border" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.05]"
+                }`}
+                style={filterType === type ? { color, borderColor: `${color}40`, backgroundColor: `${color}14` } : {}}
+              >
+                <Icon size={11} style={{ color: filterType === type ? color : undefined }} />
+                <span>{count}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3">
-          <button onClick={loadFiles} className="btn-neon" disabled={loading || isEmbedding}>
-            <RefreshCw size={11} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
-            Scan
-          </button>
-          <button
-            onClick={generateEmbeddings}
-            className={embCount > 0 ? "btn-magenta btn-neon" : "btn-neon"}
-            disabled={isEmbedding || files.length === 0}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost" size="sm"
+            onClick={loadFiles}
+            disabled={loading || isEmbedding}
+            className="h-8 px-3 text-[12px] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] gap-1.5"
           >
-            <Zap size={11} />
-            {isEmbedding ? `Embedding… ${Math.round(embeddingProgress)}%` : embCount > 0 ? "Re-Embed" : "Generate Embeddings"}
-          </button>
+            <RefreshCw size={12} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+            Scan
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            onClick={generateEmbeddings}
+            disabled={isEmbedding || files.length === 0}
+            className="h-8 px-3 text-[12px] gap-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 hover:border-indigo-500/50"
+          >
+            <Zap size={12} />
+            {isEmbedding ? `${Math.round(embeddingProgress)}%` : embCount > 0 ? "Re-embed" : "Generate embeddings"}
+          </Button>
         </div>
       </header>
 
-      {/* ── Type filter dropdown ─────────────────────────────────────────── */}
-      <AnimatePresence>
-        {statsOpen && (
-          <motion.div
-            className="glass"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            style={{
-              position: "fixed",
-              top: 68,
-              right: selectedFile ? 368 : 16,
-              zIndex: 45,
-              padding: "12px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              minWidth: 200,
-            }}
-          >
-            <div
-              className="font-orbitron pb-1"
-              style={{ fontSize: 8, letterSpacing: "0.15em", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}
-            >
-              FILTER BY TYPE
-            </div>
-            <button
-              onClick={() => setFilterType(null)}
-              className="flex items-center justify-between px-2 py-1.5 rounded transition-colors"
-              style={{ background: filterType === null ? "rgba(0,212,255,0.1)" : "transparent", width: "100%", cursor: "pointer" }}
-            >
-              <span style={{ fontSize: 11, color: "var(--text)", fontFamily: "var(--font-outfit)" }}>All files</span>
-              <span className="font-mono-space" style={{ fontSize: 10, color: "var(--cyan)" }}>{files.length}</span>
-            </button>
-            {Object.entries(typeCounts).map(([type, count]) => {
-              const color = FILE_TYPE_COLORS[type as keyof typeof FILE_TYPE_COLORS] ?? "#64748B";
-              const Icon = TYPE_ICONS[type] ?? File;
-              return (
-                <button
-                  key={type}
-                  onClick={() => setFilterType(filterType === type ? null : type)}
-                  className="flex items-center justify-between px-2 py-1.5 rounded transition-colors"
-                  style={{
-                    background: filterType === type ? `${color}18` : "transparent",
-                    width: "100%",
-                    cursor: "pointer",
-                    border: filterType === type ? `1px solid ${color}44` : "1px solid transparent",
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon size={11} color={color} />
-                    <span style={{ fontSize: 11, color: "var(--text)", fontFamily: "var(--font-outfit)" }}>
-                      {FILE_TYPE_LABELS[type as keyof typeof FILE_TYPE_LABELS] ?? type}
-                    </span>
-                  </div>
-                  <span className="font-mono-space" style={{ fontSize: 10, color }}>{count}</span>
-                </button>
-              );
-            })}
-            <div style={{ height: 1, background: "var(--border)" }} />
-            <div className="font-orbitron" style={{ fontSize: 8, color: "var(--text-muted)", padding: "2px 8px" }}>
-              TOTAL SIZE: {formatBytes(totalSize)}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Loading state ────────────────────────────────────────────────── */}
+      {/* ── Loading overlay ─────────────────────────────────────────────── */}
       <AnimatePresence>
         {loading && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 80,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(0,5,8,0.85)",
-              backdropFilter: "blur(4px)",
-            }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[80] flex flex-col items-center justify-center"
+            style={{ background: "rgba(9,9,11,0.9)", backdropFilter: "blur(4px)" }}
           >
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                border: "2px solid var(--cyan)",
-                borderTopColor: "transparent",
-                animation: "spin 0.8s linear infinite",
-                marginBottom: 24,
-              }}
-            />
-            <p className="font-orbitron neon-cyan" style={{ fontSize: 12, letterSpacing: "0.2em" }}>
-              SCANNING DESKTOP
-            </p>
-            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, fontFamily: "var(--font-outfit)" }}>
-              Building neural index…
-            </p>
+            <Loader2 size={32} className="text-indigo-400 mb-4" style={{ animation: "spin 0.8s linear infinite" }} />
+            <p className="text-[14px] font-medium text-slate-300">Scanning Desktop…</p>
+            <p className="text-[12px] text-slate-600 mt-1">Building file index</p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Embedding progress bar ───────────────────────────────────────── */}
+      {/* ── Embedding progress ──────────────────────────────────────────── */}
       <AnimatePresence>
         {isEmbedding && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="glass"
-            style={{
-              position: "fixed",
-              bottom: 104,
-              left: "50%",
-              transform: "translateX(-50%)",
-              width: "min(520px, calc(100vw - 360px))",
-              padding: "12px 20px",
-              zIndex: 55,
-            }}
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+            className="glass fixed bottom-20 left-1/2 -translate-x-1/2 z-[55] rounded-xl px-5 py-3.5"
+            style={{ width: "min(480px, calc(100vw - 64px))" }}
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-orbitron" style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--cyan)" }}>
-                EMBEDDING WITH GEMINI
-              </span>
-              <span className="font-mono-space" style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                {embeddedCount} / {files.length}
-              </span>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <Zap size={12} className="text-indigo-400" />
+                <span className="text-[12px] font-medium text-slate-300">Generating embeddings → Neo4j</span>
+              </div>
+              <span className="text-[12px] text-slate-500 font-mono">{embeddedCount} / {files.length}</span>
             </div>
-            <div style={{ background: "var(--border)", height: 2, borderRadius: 1, overflow: "hidden" }}>
-              <div
-                className="progress-bar"
-                style={{ width: `${embeddingProgress}%`, height: "100%" }}
-              />
+            <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+              <div className="progress-bar h-full rounded-full" style={{ width: `${embeddingProgress}%` }} />
             </div>
             {embeddingCurrent && (
-              <p className="font-mono-space mt-2 truncate" style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                ↳ {embeddingCurrent}
-              </p>
+              <p className="font-mono text-[10px] text-slate-600 mt-2 truncate">{embeddingCurrent}</p>
             )}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── 3D Graph ─────────────────────────────────────────────────────── */}
+      {/* ── 3D Graph ────────────────────────────────────────────────────── */}
       <div
         style={{
-          position: "fixed",
-          inset: 0,
-          paddingTop: 60,
+          position: "fixed", inset: 0, paddingTop: 56,
           paddingRight: selectedFile ? 336 : 0,
-          transition: "padding-right 0.4s ease",
+          transition: "padding-right 0.32s cubic-bezier(0.32, 0.72, 0, 1)",
         }}
       >
         {!loading && (
@@ -416,78 +317,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* ── Legend ───────────────────────────────────────────────────────── */}
-      <div
-        className="glass"
-        style={{
-          position: "fixed",
-          bottom: 104,
-          left: 16,
-          padding: "12px 16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          zIndex: 30,
-        }}
-      >
-        <div className="font-orbitron" style={{ fontSize: 7, letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: 2 }}>
-          NODE TYPES
-        </div>
-        {Object.entries(typeCounts).map(([type, count]) => {
-          const color = FILE_TYPE_COLORS[type as keyof typeof FILE_TYPE_COLORS] ?? "#64748B";
-          return (
-            <div key={type} className="flex items-center gap-2">
-              <div
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: color,
-                  boxShadow: `0 0 6px ${color}`,
-                }}
-              />
-              <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-outfit)" }}>
-                {FILE_TYPE_LABELS[type as keyof typeof FILE_TYPE_LABELS] ?? type}
-              </span>
-              <span className="font-mono-space" style={{ fontSize: 10, color, marginLeft: "auto", paddingLeft: 8 }}>
-                {count}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Hints ────────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          position: "fixed",
-          bottom: 104,
-          right: selectedFile ? 352 : 16,
-          padding: "10px 14px",
-          zIndex: 30,
-          transition: "right 0.4s ease",
-        }}
-      >
-        <div
-          className="glass font-orbitron"
-          style={{
-            fontSize: 8,
-            letterSpacing: "0.1em",
-            color: "var(--text-dim)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            padding: "10px 14px",
-          }}
-        >
-          <span>⬡ CLICK NODE → DETAILS</span>
-          <span>⬡ DRAG → ROTATE GRAPH</span>
-          <span>⬡ SCROLL → ZOOM</span>
-          <span>⬡ ⌘+K → FOCUS SEARCH</span>
-        </div>
-      </div>
-
-      {/* ── File details panel ───────────────────────────────────────────── */}
+      {/* ── File details ────────────────────────────────────────────────── */}
       <AnimatePresence>
         {selectedFile && (
           <FileDetails
@@ -497,38 +327,12 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      {/* ── Search bar ───────────────────────────────────────────────────── */}
+      {/* ── Search ──────────────────────────────────────────────────────── */}
       <SearchBar
         files={files}
         onHighlight={setHighlightIds}
-        onSelectFile={(f) => { setSelectedFile(f); setStatsOpen(false); }}
+        onSelectFile={(f) => setSelectedFile(f)}
       />
-    </div>
-  );
-}
-
-function StatChip({
-  icon,
-  label,
-  value,
-  color,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  color: string;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span style={{ color: "var(--text-muted)" }}>{icon}</span>
-      <div>
-        <div className="font-orbitron" style={{ fontSize: 8, letterSpacing: "0.12em", color: "var(--text-muted)" }}>
-          {label}
-        </div>
-        <div className="font-mono-space" style={{ fontSize: 13, color, lineHeight: 1 }}>
-          {value.toLocaleString()}
-        </div>
-      </div>
     </div>
   );
 }

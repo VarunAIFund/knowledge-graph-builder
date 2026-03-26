@@ -10,6 +10,9 @@ export interface FileNode {
   ext: string;
   embedding?: number[];
   preview?: string;
+  community?: number;   // Neo4j label propagation community ID
+  degree?: number;      // number of SIMILAR_TO edges
+  indexed?: boolean;
   // force-graph properties
   val?: number;
   x?: number;

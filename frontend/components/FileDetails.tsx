@@ -1,9 +1,17 @@
 "use client";
 import { motion } from "framer-motion";
-import { X, ExternalLink, Clock, HardDrive, Tag, FileText, Image, Code, Film, Music, Folder, File, type LucideIcon } from "lucide-react";
-import { formatDate } from "date-fns";
+import {
+  X, ExternalLink, Clock, HardDrive, Tag,
+  FileText, Image, Code, Film, Music, Folder, File,
+  type LucideIcon,
+} from "lucide-react";
+import { format } from "date-fns";
 import type { FileNode } from "@/types";
 import { FILE_TYPE_COLORS, formatBytes } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
   image: Image,
@@ -22,184 +30,146 @@ interface Props {
 }
 
 export default function FileDetails({ file, onClose }: Props) {
-  const color = FILE_TYPE_COLORS[file.type] ?? "#64748B";
+  const color = FILE_TYPE_COLORS[file.type] ?? "#64748b";
   const Icon = TYPE_ICONS[file.type] ?? File;
   const modDate = file.modified ? new Date(parseFloat(file.modified) * 1000) : null;
 
   const openFile = () => {
-    // Open file via API (server-side open command)
     fetch(`/api/open?path=${encodeURIComponent(file.path)}`, { method: "POST" });
   };
 
   return (
     <motion.div
-      className="glass"
-      initial={{ x: "100%", opacity: 0 }}
+      initial={{ x: 340, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
-      exit={{ x: "100%", opacity: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      style={{
-        position: "fixed",
-        right: 16,
-        top: 72,
-        bottom: 16,
-        width: 320,
-        padding: 24,
-        display: "flex",
-        flexDirection: "column",
-        gap: 20,
-        zIndex: 50,
-        overflowY: "auto",
-        borderColor: `${color}33`,
-      }}
+      exit={{ x: 340, opacity: 0 }}
+      transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
+      style={{ willChange: "transform, opacity" }}
+      className="glass fixed right-4 top-[72px] bottom-4 w-[320px] rounded-xl z-50 flex flex-col overflow-hidden"
     >
-      {/* Close */}
-      <div className="flex items-center justify-between">
-        <span
-          className="type-badge"
-          style={{ color, borderColor: color }}
-        >
-          {file.type}
-        </span>
-        <button
-          onClick={onClose}
-          style={{ color: "var(--text-muted)", lineHeight: 1 }}
-          className="hover:text-white transition-colors"
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Icon + Name */}
-      <div className="flex flex-col items-center text-center gap-3 py-4">
-        <div
-          className="relative"
-          style={{
-            width: 72,
-            height: 72,
-            borderRadius: "50%",
-            border: `2px solid ${color}55`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: `radial-gradient(circle, ${color}18 0%, transparent 70%)`,
-          }}
-        >
-          <div className="pulse-ring" style={{ borderColor: color }} />
-          <Icon size={28} color={color} />
-        </div>
-        <div>
-          <p
-            className="font-mono-space text-sm leading-tight"
-            style={{
-              color: "var(--text)",
-              wordBreak: "break-all",
-              maxHeight: 64,
-              overflow: "hidden",
-            }}
-          >
-            {file.name}
-          </p>
-          {file.ext && (
-            <span className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "var(--font-space-mono)" }}>
-              .{file.ext.toUpperCase()}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${color}44, transparent)` }} />
-
-      {/* Metadata */}
-      <div className="flex flex-col gap-3">
-        {file.size > 0 && (
-          <MetaRow icon={<HardDrive size={13} />} label="Size" value={formatBytes(file.size)} />
-        )}
-        {modDate && (
-          <MetaRow
-            icon={<Clock size={13} />}
-            label="Modified"
-            value={formatDate(modDate, "MMM d, yyyy · HH:mm")}
-          />
-        )}
-        <MetaRow
-          icon={<Tag size={13} />}
-          label="Type"
-          value={file.type.charAt(0).toUpperCase() + file.type.slice(1)}
-          valueColor={color}
-        />
-      </div>
-
-      {/* Preview / AI description */}
-      {file.preview && (
-        <>
-          <div style={{ height: 1, background: "var(--border)" }} />
-          <div>
-            <p
-              className="font-orbitron"
-              style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}
+      <ScrollArea className="flex-1">
+        <div className="p-5 flex flex-col gap-5">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <Badge
+              variant="outline"
+              className="text-[11px] font-medium"
+              style={{ color, borderColor: `${color}40`, backgroundColor: `${color}12` }}
             >
-              AI DESCRIPTION
-            </p>
-            <p
+              {file.type}
+            </Badge>
+            <button
+              onClick={onClose}
+              className="pressable w-7 h-7 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* File identity */}
+          <div className="flex flex-col items-center text-center gap-3 py-2">
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
               style={{
-                fontSize: 12,
-                color: "var(--text)",
-                lineHeight: 1.6,
-                fontFamily: "var(--font-outfit)",
+                backgroundColor: `${color}14`,
+                border: `1px solid ${color}28`,
               }}
             >
-              {file.preview}
-            </p>
+              <Icon size={24} style={{ color }} />
+            </div>
+            <div className="space-y-1 w-full">
+              <p className="text-[15px] font-semibold text-slate-100 leading-tight break-words px-2">
+                {file.name}
+              </p>
+              {file.ext && (
+                <p className="text-[11px] text-slate-500 font-mono uppercase tracking-wider">
+                  .{file.ext}
+                </p>
+              )}
+            </div>
           </div>
-        </>
-      )}
 
-      {/* Embedding status */}
-      <div style={{ height: 1, background: "var(--border)" }} />
-      <div className="flex items-center gap-2">
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: file.embedding ? "var(--green)" : "var(--text-dim)",
-            boxShadow: file.embedding ? "0 0 8px var(--green)" : "none",
-          }}
-        />
-        <span
-          className="font-orbitron"
-          style={{ fontSize: 9, letterSpacing: "0.1em", color: file.embedding ? "var(--green)" : "var(--text-muted)" }}
+          <Separator className="bg-white/[0.06]" />
+
+          {/* Metadata */}
+          <div className="flex flex-col gap-3">
+            {file.size > 0 && (
+              <MetaRow
+                icon={<HardDrive size={13} />}
+                label="Size"
+                value={formatBytes(file.size)}
+              />
+            )}
+            {modDate && (
+              <MetaRow
+                icon={<Clock size={13} />}
+                label="Modified"
+                value={format(modDate, "MMM d, yyyy · HH:mm")}
+              />
+            )}
+            <MetaRow
+              icon={<Tag size={13} />}
+              label="Type"
+              value={file.type.charAt(0).toUpperCase() + file.type.slice(1)}
+              valueColor={color}
+            />
+          </div>
+
+          {/* AI Summary */}
+          {file.preview && (
+            <>
+              <Separator className="bg-white/[0.06]" />
+              <div className="space-y-2">
+                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                  Summary
+                </p>
+                <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3">
+                  <p className="text-[13px] text-slate-300 leading-relaxed">
+                    {file.preview}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Index status */}
+          <div className="flex items-center gap-2 pt-1">
+            <div
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{
+                background: file.embedding ? "var(--green)" : "var(--text-dim)",
+                boxShadow: file.embedding ? "0 0 6px var(--green)" : "none",
+              }}
+            />
+            <span
+              className="text-[12px]"
+              style={{ color: file.embedding ? "var(--green)" : "var(--text-muted)" }}
+            >
+              {file.embedding ? "Indexed · semantic search ready" : "Not indexed"}
+            </span>
+          </div>
+
+          {/* Path */}
+          <p
+            className="font-mono text-[10px] break-all leading-relaxed"
+            style={{ color: "var(--text-dim)" }}
+          >
+            {file.path}
+          </p>
+        </div>
+      </ScrollArea>
+
+      {/* Footer action */}
+      <div className="p-4 border-t border-white/[0.06]">
+        <Button
+          onClick={openFile}
+          variant="outline"
+          className="w-full gap-2 h-9 text-[13px] border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.07] text-slate-200 hover:text-white"
         >
-          {file.embedding ? "EMBEDDED · INDEXED" : "NOT YET EMBEDDED"}
-        </span>
+          <ExternalLink size={13} />
+          Open in Finder
+        </Button>
       </div>
-
-      {/* Path */}
-      <div
-        className="font-mono-space"
-        style={{
-          fontSize: 10,
-          color: "var(--text-dim)",
-          wordBreak: "break-all",
-          lineHeight: 1.5,
-          marginTop: "auto",
-          paddingTop: 8,
-        }}
-      >
-        {file.path}
-      </div>
-
-      {/* Open button */}
-      <button
-        onClick={openFile}
-        className="btn-neon w-full justify-center"
-        style={{ borderColor: color, color, background: `${color}10` }}
-      >
-        <ExternalLink size={12} />
-        Open in Finder
-      </button>
     </motion.div>
   );
 }
@@ -216,16 +186,14 @@ function MetaRow({
   valueColor?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex items-center gap-2" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 text-slate-500 min-w-0">
         {icon}
-        <span className="font-orbitron" style={{ fontSize: 9, letterSpacing: "0.1em" }}>
-          {label.toUpperCase()}
-        </span>
+        <span className="text-[12px] font-medium">{label}</span>
       </div>
       <span
-        className="font-mono-space"
-        style={{ fontSize: 11, color: valueColor ?? "var(--text)", textAlign: "right" }}
+        className="text-[13px] text-right shrink-0"
+        style={{ color: valueColor ?? "var(--text)" }}
       >
         {value}
       </span>

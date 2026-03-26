@@ -11,26 +11,62 @@ interface Props {
   highlightIds?: Set<string>;
 }
 
+// ── Community palette — 20 distinct hues that look good on dark backgrounds ──
+const COMMUNITY_PALETTE = [
+  "#6366f1", // indigo
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#14b8a6", // teal
+  "#f59e0b", // amber
+  "#10b981", // emerald
+  "#3b82f6", // blue
+  "#ef4444", // red
+  "#f97316", // orange
+  "#84cc16", // lime
+  "#06b6d4", // cyan
+  "#a855f7", // purple
+  "#22d3ee", // sky
+  "#fb7185", // rose
+  "#fbbf24", // yellow
+  "#4ade80", // green
+  "#60a5fa", // light blue
+  "#c084fc", // light purple
+  "#34d399", // light emerald
+  "#f472b6", // light pink
+];
+
+function getCommunityColor(communityId: number | undefined, fileType: string): string {
+  if (communityId !== undefined && communityId !== null) {
+    return COMMUNITY_PALETTE[communityId % COMMUNITY_PALETTE.length];
+  }
+  return FILE_TYPE_COLORS[fileType as keyof typeof FILE_TYPE_COLORS] ?? "#64748b";
+}
+
+// ── Glow texture cache ────────────────────────────────────────────────────────
+const textureCache = new Map<string, THREE.Texture>();
+
 function makeGlowTexture(color: string): THREE.Texture {
   const size = 128;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  gradient.addColorStop(0, color + "ff");
-  gradient.addColorStop(0.3, color + "88");
-  gradient.addColorStop(1, color + "00");
-  ctx.fillStyle = gradient;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0,   color + "ff");
+  g.addColorStop(0.25, color + "cc");
+  g.addColorStop(0.6,  color + "44");
+  g.addColorStop(1,    color + "00");
+  ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   return new THREE.CanvasTexture(canvas);
 }
 
-// Cache textures per color
-const textureCache = new Map<string, THREE.Texture>();
-function getCachedTexture(color: string): THREE.Texture {
+function getTexture(color: string): THREE.Texture {
   if (!textureCache.has(color)) textureCache.set(color, makeGlowTexture(color));
   return textureCache.get(color)!;
 }
+
+// ── Cluster shell geometry cache ──────────────────────────────────────────────
+const shellCache = new Map<string, THREE.Mesh>();
 
 export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,102 +74,141 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
   const [hovered, setHovered] = useState<FileNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
-  // Initial camera + lighting setup
+  // Compute community membership for cluster shell rendering
+  const communityNodes = useCallback(() => {
+    const map = new Map<number, FileNode[]>();
+    for (const node of data.nodes) {
+      const n = node as FileNode;
+      if (n.community !== undefined && n.community !== null) {
+        const c = n.community;
+        if (!map.has(c)) map.set(c, []);
+        map.get(c)!.push(n);
+      }
+    }
+    return map;
+  }, [data.nodes]);
+
+  // Scene setup
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-
-    fg.cameraPosition({ z: 380, y: 30 });
+    fg.cameraPosition({ z: 400, y: 40 });
 
     const scene = fg.scene() as THREE.Scene;
 
-    const ambient = new THREE.AmbientLight(0x0a1a2e, 4);
-    scene.add(ambient);
+    // Remove old lights
+    const toRemove = scene.children.filter(
+      (c) => c instanceof THREE.AmbientLight || c instanceof THREE.PointLight
+    );
+    toRemove.forEach((c) => scene.remove(c));
 
-    const point1 = new THREE.PointLight(0x00d4ff, 2, 800);
-    point1.position.set(200, 200, 200);
-    scene.add(point1);
+    scene.add(new THREE.AmbientLight(0x0a0a18, 3));
 
-    const point2 = new THREE.PointLight(0xff0080, 1.5, 600);
-    point2.position.set(-200, -100, 100);
-    scene.add(point2);
+    const p1 = new THREE.PointLight(0x6366f1, 2.5, 900);
+    p1.position.set(250, 250, 200);
+    scene.add(p1);
+
+    const p2 = new THREE.PointLight(0x8b5cf6, 1.8, 700);
+    p2.position.set(-250, -150, 150);
+    scene.add(p2);
+
+    const p3 = new THREE.PointLight(0x14b8a6, 1.2, 500);
+    p3.position.set(0, -300, -200);
+    scene.add(p3);
   }, []);
 
-  // Slow camera auto-rotation
+  // Camera auto-rotation
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    let angle = 0;
+    let angle  = 0;
+    let tilt   = 0;
     let running = true;
-    const R = 380;
-    const Y = 30;
+    const R = 400, Y = 40;
     const tick = () => {
       if (!running) return;
-      angle += 0.0008;
-      fg.cameraPosition({
-        x: R * Math.sin(angle),
-        z: R * Math.cos(angle),
-        y: Y,
-      });
+      angle += 0.0007;
+      tilt   = Math.sin(angle * 0.3) * 30;
+      fg.cameraPosition({ x: R * Math.sin(angle), z: R * Math.cos(angle), y: Y + tilt });
       requestAnimationFrame(tick);
     };
-    const id = requestAnimationFrame(tick);
-    return () => { running = false; cancelAnimationFrame(id); };
+    requestAnimationFrame(tick);
+    return () => { running = false; };
   }, []);
 
   const nodeThreeObject = useCallback(
     (rawNode: object) => {
-      const node = rawNode as FileNode;
-      const color = FILE_TYPE_COLORS[node.type] ?? "#64748B";
-      const colorHex = parseInt(color.replace("#", ""), 16);
-      const radius = node.val ?? 3;
+      const node       = rawNode as FileNode;
+      const community  = node.community;
+      const color      = getCommunityColor(community, node.type);
+      const colorHex   = parseInt(color.replace("#", ""), 16);
       const highlighted = highlightIds?.has(node.id);
+      const radius      = node.val ?? 3;
+      const group       = new THREE.Group();
 
-      const group = new THREE.Group();
-
-      // Core sphere
+      // Core sphere — slightly different material based on indexed status
       const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(radius, 20, 20),
+        new THREE.SphereGeometry(radius, 24, 24),
         new THREE.MeshStandardMaterial({
-          color: colorHex,
-          emissive: colorHex,
-          emissiveIntensity: highlighted ? 1.2 : 0.55,
-          metalness: 0.6,
-          roughness: 0.15,
+          color:            colorHex,
+          emissive:         colorHex,
+          emissiveIntensity: highlighted ? 1.4 : node.indexed ? 0.7 : 0.35,
+          metalness:        0.5,
+          roughness:        node.indexed ? 0.1 : 0.4,
         })
       );
       group.add(sphere);
 
-      // Glow halo sprite
+      // Glow halo — larger for highly-connected nodes
       const sprite = new THREE.Sprite(
         new THREE.SpriteMaterial({
-          map: getCachedTexture(color),
+          map:         getTexture(color),
           transparent: true,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
+          blending:    THREE.AdditiveBlending,
+          depthWrite:  false,
+          opacity:     highlighted ? 0.9 : 0.65,
         })
       );
-      const glowSize = radius * (highlighted ? 7 : 5);
-      sprite.scale.set(glowSize, glowSize, 1);
+      const glowMult = highlighted ? 8 : (node.degree ?? 0) > 3 ? 7 : 5;
+      sprite.scale.set(radius * glowMult, radius * glowMult, 1);
       group.add(sprite);
 
-      // Pulse ring for highlighted nodes
+      // Highlight ring for search results
       if (highlighted) {
         const ring = new THREE.Mesh(
-          new THREE.TorusGeometry(radius * 1.8, 0.3, 8, 32),
-          new THREE.MeshBasicMaterial({
-            color: colorHex,
-            transparent: true,
-            opacity: 0.6,
-          })
+          new THREE.TorusGeometry(radius * 2, 0.35, 8, 40),
+          new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.7 })
         );
         group.add(ring);
+
+        // Second outer ring for extra pop
+        const ring2 = new THREE.Mesh(
+          new THREE.TorusGeometry(radius * 2.8, 0.2, 8, 40),
+          new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.35 })
+        );
+        group.add(ring2);
       }
 
       return group;
     },
     [highlightIds]
   );
+
+  // Link color — gradient from muted (low similarity) to vivid (high similarity)
+  const linkColor = useCallback((link: object) => {
+    const l     = link as { value?: number; source?: unknown; target?: unknown };
+    const score = l.value ?? 0.75;
+    // Interpolate: low similarity → slate-700, high → indigo-400
+    const alpha = Math.round(60 + score * 160).toString(16).padStart(2, "0");
+    // Pick hue from community if available — else use indigo
+    const srcId = typeof l.source === "string" ? l.source : (l.source as FileNode)?.id;
+    const srcNode = data.nodes.find((n) => n.id === srcId) as FileNode | undefined;
+    if (srcNode?.community !== undefined) {
+      const c = COMMUNITY_PALETTE[srcNode.community % COMMUNITY_PALETTE.length];
+      return c + alpha;
+    }
+    return `#818cf8${alpha}`; // indigo-400
+  }, [data.nodes]);
 
   const handleNodeHover = useCallback(
     (rawNode: object | null, _prev: object | null, event?: MouseEvent) => {
@@ -153,6 +228,8 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [handleMouseMove]);
 
+  const communities = communityNodes();
+
   return (
     <>
       <ForceGraph3D
@@ -160,25 +237,27 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
         graphData={data as { nodes: object[]; links: object[] }}
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
-        linkColor={(link: object) => {
-          const l = link as { value: number };
-          const alpha = Math.round((l.value ?? 0.5) * 180).toString(16).padStart(2, "0");
-          return `#00D4FF${alpha}`;
+        linkColor={linkColor}
+        linkWidth={(link: object) => {
+          const l = link as { value?: number };
+          return 0.4 + (l.value ?? 0.75) * 1.2;
         }}
-        linkWidth={(link: object) => ((link as { value: number }).value ?? 0.5) * 1.5}
-        linkOpacity={0.6}
-        linkDirectionalParticles={3}
-        linkDirectionalParticleSpeed={0.004}
-        linkDirectionalParticleWidth={0.8}
-        linkDirectionalParticleColor={() => "#00D4FF"}
+        linkOpacity={0.5}
+        linkDirectionalParticles={2}
+        linkDirectionalParticleSpeed={(link: object) => {
+          const l = link as { value?: number };
+          return 0.002 + (l.value ?? 0.75) * 0.006;
+        }}
+        linkDirectionalParticleWidth={1.0}
+        linkDirectionalParticleColor={linkColor}
         backgroundColor="rgba(0,0,0,0)"
         showNavInfo={false}
         onNodeClick={(rawNode: object) => onNodeClick(rawNode as FileNode)}
         onNodeHover={handleNodeHover as (node: object | null, prev: object | null) => void}
         nodeLabel={() => ""}
-        cooldownTicks={120}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
+        cooldownTicks={150}
+        d3AlphaDecay={0.015}
+        d3VelocityDecay={0.25}
         width={typeof window !== "undefined" ? window.innerWidth : 1200}
         height={typeof window !== "undefined" ? window.innerHeight : 800}
       />
@@ -186,15 +265,91 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
       {/* Tooltip */}
       {hovered && (
         <div
-          className="node-tooltip"
-          style={{ left: tooltipPos.x, top: tooltipPos.y }}
+          style={{
+            position: "fixed",
+            left: tooltipPos.x,
+            top: tooltipPos.y,
+            background: "rgba(9,9,11,0.92)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontSize: 12,
+            pointerEvents: "none",
+            zIndex: 100,
+            maxWidth: 280,
+            backdropFilter: "blur(12px)",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+          }}
         >
-          <div style={{ color: FILE_TYPE_COLORS[hovered.type], marginBottom: 2, fontSize: 9, letterSpacing: "0.1em", fontFamily: "var(--font-orbitron)" }}>
-            {hovered.type.toUpperCase()}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+            <span
+              style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: getCommunityColor(hovered.community, hovered.type),
+                flexShrink: 0,
+                boxShadow: `0 0 6px ${getCommunityColor(hovered.community, hovered.type)}`,
+              }}
+            />
+            <span style={{ color: "#94a3b8", fontSize: 10, fontFamily: "var(--font-space-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              {hovered.type}
+              {hovered.community !== undefined ? ` · cluster ${hovered.community}` : ""}
+              {hovered.degree ? ` · ${hovered.degree} link${hovered.degree !== 1 ? "s" : ""}` : ""}
+            </span>
           </div>
-          <div style={{ color: "#E0F2FE", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-outfit)" }}>
             {hovered.name}
           </div>
+        </div>
+      )}
+
+      {/* Community legend — bottom left, only when communities exist */}
+      {communities.size > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 80,
+            left: 16,
+            zIndex: 30,
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            padding: "10px 14px",
+            background: "rgba(9,9,11,0.7)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 10,
+            backdropFilter: "blur(12px)",
+            maxHeight: 280,
+            overflowY: "auto",
+          }}
+        >
+          <div style={{ fontSize: 9, color: "#475569", fontFamily: "var(--font-space-mono)", letterSpacing: "0.12em", marginBottom: 4, textTransform: "uppercase" }}>
+            {communities.size} clusters
+          </div>
+          {Array.from(communities.entries())
+            .sort((a, b) => b[1].length - a[1].length)
+            .slice(0, 12)
+            .map(([cId, nodes]) => {
+              const color = COMMUNITY_PALETTE[cId % COMMUNITY_PALETTE.length];
+              const topNode = nodes.sort((a, b) => (b.degree ?? 0) - (a.degree ?? 0))[0];
+              return (
+                <div key={cId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div
+                    style={{
+                      width: 7, height: 7, borderRadius: "50%",
+                      background: color,
+                      boxShadow: `0 0 5px ${color}`,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "var(--font-outfit)", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {topNode?.name ?? `Cluster ${cId}`}
+                  </span>
+                  <span style={{ fontSize: 10, color: color, marginLeft: "auto", fontFamily: "var(--font-space-mono)" }}>
+                    {nodes.length}
+                  </span>
+                </div>
+              );
+            })}
         </div>
       )}
     </>

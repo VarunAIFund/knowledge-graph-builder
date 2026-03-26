@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: ["class"],
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -14,46 +15,44 @@ const config: Config = {
         sans: ["var(--font-outfit)", "sans-serif"],
       },
       colors: {
-        neural: {
-          bg: "#000508",
-          surface: "#040d1a",
-          border: "rgba(0,212,255,0.15)",
+        border: "var(--border)",
+        input: "var(--input)",
+        ring: "var(--ring)",
+        background: "var(--bg)",
+        foreground: "var(--text)",
+        primary: {
+          DEFAULT: "var(--primary)",
+          foreground: "var(--primary-foreground)",
         },
-        neon: {
-          cyan: "#00D4FF",
-          magenta: "#FF0080",
-          green: "#00FF88",
-          amber: "#FFB800",
-          purple: "#8B5CF6",
-          orange: "#FF6B00",
+        secondary: {
+          DEFAULT: "var(--secondary)",
+          foreground: "var(--secondary-foreground)",
         },
-      },
-      animation: {
-        "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "spin-slow": "spin 8s linear infinite",
-        "grid-move": "gridMove 20s linear infinite",
-        "flicker": "flicker 4s step-end infinite",
-        "scan": "scan 4s linear infinite",
-      },
-      keyframes: {
-        gridMove: {
-          "0%": { backgroundPosition: "0 0, -30px -30px, -30px -30px" },
-          "100%": { backgroundPosition: "0 0, 30px 30px, 30px 30px" },
+        destructive: {
+          DEFAULT: "var(--destructive)",
+          foreground: "var(--destructive-foreground)",
         },
-        flicker: {
-          "0%, 95%, 100%": { opacity: "1" },
-          "96%": { opacity: "0.4" },
-          "97%": { opacity: "1" },
-          "98%": { opacity: "0.2" },
-          "99%": { opacity: "1" },
+        muted: {
+          DEFAULT: "var(--muted)",
+          foreground: "var(--muted-foreground)",
         },
-        scan: {
-          "0%": { transform: "translateY(-100%)" },
-          "100%": { transform: "translateY(100vh)" },
+        accent: {
+          DEFAULT: "var(--accent-var)",
+          foreground: "var(--accent-foreground)",
+        },
+        popover: {
+          DEFAULT: "var(--popover)",
+          foreground: "var(--popover-foreground)",
+        },
+        card: {
+          DEFAULT: "var(--card)",
+          foreground: "var(--card-foreground)",
         },
       },
-      backdropBlur: {
-        xs: "2px",
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
       },
     },
   },

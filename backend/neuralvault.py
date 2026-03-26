@@ -1,13 +1,15 @@
 """
-NeuralVault backend — file scanning + Gemini Embedding 2 (multimodal)
-Supports: text, code, images, PDFs, audio, video via gemini-embedding-2-preview
+NeuralVault backend — file scanning + Gemini Embedding 2 + Neo4j knowledge graph
 """
 
 import os
 import json
+import math
+import threading
 import subprocess
 from pathlib import Path
 import mimetypes
+from collections import defaultdict
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -17,11 +19,9 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from google import genai
 from google.genai import types as genai_types
+from neo4j import GraphDatabase
 
 # ── Gemini client ──────────────────────────────────────────────────────────────
-# Vertex AI path: set GOOGLE_CLOUD_PROJECT (uses ADC / GOOGLE_APPLICATION_CREDENTIALS)
-# API key path:   set GEMINI_API_KEY (falls back to gemini-embedding-001)
-
 _project = os.environ.get("GOOGLE_CLOUD_PROJECT")
 if _project:
     _client = genai.Client(
@@ -50,6 +50,11 @@ IMAGE_EXTS  = {"png","jpg","jpeg","gif","webp","bmp","tiff","tif","heic","heif"}
 PDF_EXTS    = {"pdf"}
 AUDIO_EXTS  = {"mp3","wav","m4a","aac","ogg","flac","opus"}
 VIDEO_EXTS  = {"mp4","mov","avi","mkv","webm","m4v","mpeg","mpg"}
+CODE_EXTS   = {
+    "js","ts","jsx","tsx","py","rb","go","rs","java","cpp","c","h","cs",
+    "php","swift","sh","bash","zsh","css","html","htm","xml","sql","graphql",
+    "proto","r","ipynb",
+}
 
 FILE_TYPE_MAP: dict[str, str] = (
     {e: "image"  for e in IMAGE_EXTS} |
@@ -70,12 +75,6 @@ FILE_TYPE_COLORS = {
     "other":  "#64748B",
 }
 
-CODE_EXTS = {
-    "js","ts","jsx","tsx","py","rb","go","rs","java","cpp","c","h","cs",
-    "php","swift","sh","bash","zsh","css","html","htm","xml","sql","graphql",
-    "proto","r","ipynb",
-}
-
 def get_file_type(ext: str) -> str:
     t = FILE_TYPE_MAP.get(ext.lower(), "other")
     if t == "text" and ext.lower() in CODE_EXTS:
@@ -83,34 +82,28 @@ def get_file_type(ext: str) -> str:
     return t
 
 # ── Desktop scanner ────────────────────────────────────────────────────────────
-DESKTOP = Path(os.environ.get("DESKTOP_PATH", Path.home() / "Desktop"))
+DESKTOP    = Path(os.environ.get("DESKTOP_PATH", Path.home() / "Desktop"))
 SCAN_DEPTH = int(os.environ.get("SCAN_DEPTH", "3"))
 MAX_FILE_MB = 100
 
-# Folders to skip entirely
 SKIP_DIRS = {
     "node_modules", ".git", "__pycache__", ".venv", "venv", "env",
     "dist", "build", ".next", ".cache", "vendor", ".tox", "coverage",
 }
-
-# File extensions to skip (code, config, dev files)
 SKIP_EXTS = {
-    "py", "js", "ts", "jsx", "tsx", "rb", "go", "rs", "java", "cpp", "c",
-    "h", "cs", "php", "swift", "sh", "bash", "zsh", "r", "ipynb",
-    "json", "yaml", "yml", "toml", "ini", "conf", "config", "lock",
-    "env", "gitignore", "gitattributes", "dockerignore", "editorconfig",
-    "eslintrc", "prettierrc", "babelrc", "npmrc", "nvmrc",
-    "sql", "graphql", "proto", "log",
+    "py","js","ts","jsx","tsx","rb","go","rs","java","cpp","c","h","cs",
+    "php","swift","sh","bash","zsh","r","ipynb","json","yaml","yml","toml",
+    "ini","conf","config","lock","env","gitignore","gitattributes",
+    "dockerignore","editorconfig","eslintrc","prettierrc","babelrc",
+    "npmrc","nvmrc","sql","graphql","proto","log",
 }
-
-# Exact filenames to skip
 SKIP_NAMES = {
-    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "requirements.txt", "Pipfile", "Pipfile.lock", "poetry.lock",
-    "Makefile", "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
-    ".env", ".env.local", ".env.production", ".gitignore", "tsconfig.json",
-    "next.config.js", "next.config.ts", "vite.config.ts", "webpack.config.js",
-    "tailwind.config.js", "tailwind.config.ts", "postcss.config.js",
+    "package.json","package-lock.json","yarn.lock","pnpm-lock.yaml",
+    "requirements.txt","Pipfile","Pipfile.lock","poetry.lock",
+    "Makefile","Dockerfile","docker-compose.yml","docker-compose.yaml",
+    ".env",".env.local",".env.production",".gitignore","tsconfig.json",
+    "next.config.js","next.config.ts","vite.config.ts","webpack.config.js",
+    "tailwind.config.js","tailwind.config.ts","postcss.config.js",
 }
 
 def scan_dir(directory: Path, depth: int) -> list[dict]:
@@ -123,24 +116,16 @@ def scan_dir(directory: Path, depth: int) -> list[dict]:
     for entry in sorted(entries, key=lambda e: e.name.lower()):
         if entry.name.startswith("."):
             continue
-
         if entry.is_dir():
             if entry.name in SKIP_DIRS:
                 continue
             nodes.append({
-                "id":       str(entry),
-                "name":     entry.name,
-                "path":     str(entry),
-                "type":     "folder",
-                "size":     0,
-                "modified": "",
-                "ext":      "",
-                "color":    FILE_TYPE_COLORS["folder"],
-                "val":      4,
+                "id": str(entry), "name": entry.name, "path": str(entry),
+                "type": "folder", "size": 0, "modified": "", "ext": "",
+                "color": FILE_TYPE_COLORS["folder"], "val": 4,
             })
             if depth < SCAN_DEPTH:
                 nodes.extend(scan_dir(entry, depth + 1))
-
         elif entry.is_file():
             if entry.name in SKIP_NAMES:
                 continue
@@ -148,113 +133,342 @@ def scan_dir(directory: Path, depth: int) -> list[dict]:
                 stat = entry.stat()
             except OSError:
                 continue
-            size_mb = stat.st_size / 1024 / 1024
-            if size_mb > MAX_FILE_MB:
+            if stat.st_size / 1024 / 1024 > MAX_FILE_MB:
                 continue
             ext = entry.suffix.lstrip(".").lower()
             if ext in SKIP_EXTS:
                 continue
             ftype = get_file_type(ext)
             nodes.append({
-                "id":       str(entry),
-                "name":     entry.name,
-                "path":     str(entry),
-                "type":     ftype,
-                "size":     stat.st_size,
-                "modified": str(stat.st_mtime),
-                "ext":      ext,
-                "color":    FILE_TYPE_COLORS.get(ftype, FILE_TYPE_COLORS["other"]),
-                "val":      max(2, min(8, int(stat.st_size / 1024).bit_length())),
+                "id": str(entry), "name": entry.name, "path": str(entry),
+                "type": ftype, "size": stat.st_size, "modified": str(stat.st_mtime),
+                "ext": ext, "color": FILE_TYPE_COLORS.get(ftype, FILE_TYPE_COLORS["other"]),
+                "val": max(2, min(8, int(stat.st_size / 1024).bit_length())),
             })
-
     return nodes
 
-# ── Embedding via Gemini Embedding 2 ──────────────────────────────────────────
-MAX_INLINE_MB = 5  # max file size to send inline (images/PDFs/audio/video)
+# ── Cosine similarity (Python) ─────────────────────────────────────────────────
+def cosine_similarity_py(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    mag_a = math.sqrt(sum(x * x for x in a))
+    mag_b = math.sqrt(sum(y * y for y in b))
+    denom = mag_a * mag_b
+    return dot / denom if denom else 0.0
 
-def embed(content: str | bytes, mime: str | None = None, task: str = "RETRIEVAL_DOCUMENT") -> list[float]:
+# ── Community detection — label propagation ────────────────────────────────────
+def label_propagation(
+    node_ids: list[str],
+    edges: list[tuple[str, str, float]],
+    iterations: int = 30,
+) -> dict[str, int]:
     """
-    Embed any content using gemini-embedding-2-preview.
-    - str  → text embedding
-    - bytes with mime → inline multimodal part (image, PDF, audio, video)
+    Weighted label propagation community detection.
+    Returns {node_id: community_id} with sequential IDs starting at 0.
     """
+    if not node_ids:
+        return {}
+
+    adj: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for src, tgt, w in edges:
+        adj[src].append((tgt, w))
+        adj[tgt].append((src, w))
+
+    # Initialize: each node is its own community
+    labels: dict[str, int] = {nid: i for i, nid in enumerate(node_ids)}
+
+    import random
+    shuffled = list(node_ids)
+
+    for _ in range(iterations):
+        random.shuffle(shuffled)
+        changed = False
+        for nid in shuffled:
+            neighbors = adj.get(nid, [])
+            if not neighbors:
+                continue
+            vote: dict[int, float] = defaultdict(float)
+            for nb, w in neighbors:
+                vote[labels[nb]] += w
+            best = max(vote, key=lambda k: (vote[k], -k))
+            if best != labels[nid]:
+                labels[nid] = best
+                changed = True
+        if not changed:
+            break
+
+    # Remap to sequential IDs
+    unique = sorted(set(labels.values()))
+    remap = {old: new for new, old in enumerate(unique)}
+    return {nid: remap[labels[nid]] for nid in node_ids}
+
+
+# ── Neo4j client ───────────────────────────────────────────────────────────────
+_neo4j_driver = None
+_neo4j_lock   = threading.Lock()
+NEO4J_DB      = os.environ.get("NEO4J_DATABASE", "neo4j")
+
+def get_neo4j_driver():
+    global _neo4j_driver
+    if _neo4j_driver is not None:
+        return _neo4j_driver
+    with _neo4j_lock:
+        if _neo4j_driver is not None:
+            return _neo4j_driver
+        uri      = os.environ.get("NEO4J_URI")
+        user     = os.environ.get("NEO4J_USERNAME", "neo4j")
+        password = os.environ.get("NEO4J_PASSWORD")
+        if not (uri and password):
+            return None
+        try:
+            drv = GraphDatabase.driver(uri, auth=(user, password))
+            drv.verify_connectivity()
+            _neo4j_driver = drv
+            print(f"✓ Neo4j connected: {uri}")
+            _ensure_constraints()
+        except Exception as e:
+            print(f"✗ Neo4j connection failed: {e}")
+    return _neo4j_driver
+
+
+def _ensure_constraints():
+    driver = _neo4j_driver
+    if not driver:
+        return
+    try:
+        with driver.session(database=NEO4J_DB) as session:
+            session.run(
+                "CREATE CONSTRAINT file_id IF NOT EXISTS "
+                "FOR (f:File) REQUIRE f.id IS UNIQUE"
+            )
+    except Exception:
+        pass
+
+
+def neo4j_upsert_files(nodes: list[dict]):
+    driver = get_neo4j_driver()
+    if not driver:
+        return
+    slim = [{k: v for k, v in n.items() if k != "embedding"} for n in nodes]
+    try:
+        with driver.session(database=NEO4J_DB) as session:
+            session.run("""
+                UNWIND $nodes AS n
+                MERGE (f:File {id: n.id})
+                SET f.name = n.name, f.path = n.path, f.type = n.type,
+                    f.size = n.size, f.modified = n.modified, f.ext = n.ext,
+                    f.color = n.color, f.val = n.val
+            """, nodes=slim)
+    except Exception as e:
+        print(f"Neo4j upsert error: {e}")
+
+
+def neo4j_load_embeddings(file_ids: list[str]) -> dict[str, dict]:
+    driver = get_neo4j_driver()
+    if not driver:
+        return {}
+    try:
+        with driver.session(database=NEO4J_DB) as session:
+            result = session.run("""
+                MATCH (f:File) WHERE f.id IN $ids AND f.embedding IS NOT NULL
+                RETURN f.id AS id, f.embedding AS embedding,
+                       f.preview AS preview, f.community AS community
+            """, ids=file_ids)
+            return {
+                r["id"]: {
+                    "embedding": r["embedding"],
+                    "preview":   r["preview"] or "",
+                    "community": r["community"],
+                }
+                for r in result
+            }
+    except Exception as e:
+        print(f"Neo4j load embeddings error: {e}")
+        return {}
+
+
+def neo4j_save_embedding(node_id: str, embedding: list[float], preview: str):
+    driver = get_neo4j_driver()
+    if not driver:
+        return
+    try:
+        with driver.session(database=NEO4J_DB) as session:
+            session.run("""
+                MERGE (f:File {id: $id})
+                SET f.embedding = $embedding, f.preview = $preview
+            """, id=node_id, embedding=embedding, preview=preview)
+    except Exception as e:
+        print(f"Neo4j save embedding error: {e}")
+
+
+def neo4j_build_links_for_node(node_id: str, new_embedding: list[float], threshold: float = 0.72):
+    """
+    Compute SIMILAR_TO relationships for a freshly embedded node.
+    Called in a background thread — never blocks the API response.
+    """
+    driver = get_neo4j_driver()
+    if not driver:
+        return
+    try:
+        with driver.session(database=NEO4J_DB) as session:
+            result = session.run("""
+                MATCH (f:File) WHERE f.id <> $id AND f.embedding IS NOT NULL
+                RETURN f.id AS id, f.embedding AS embedding
+            """, id=node_id)
+            others = result.data()
+
+        to_create = []
+        for rec in others:
+            score = cosine_similarity_py(new_embedding, rec["embedding"])
+            if score >= threshold:
+                a, b = (node_id, rec["id"]) if node_id < rec["id"] else (rec["id"], node_id)
+                to_create.append({"a": a, "b": b, "score": round(score, 4)})
+
+        if to_create:
+            with driver.session(database=NEO4J_DB) as session:
+                session.run("""
+                    UNWIND $rels AS r
+                    MATCH (a:File {id: r.a}), (b:File {id: r.b})
+                    MERGE (a)-[rel:SIMILAR_TO]->(b)
+                    SET rel.score = r.score
+                """, rels=to_create)
+
+        # Recompute communities after link update
+        _recompute_communities()
+
+    except Exception as e:
+        print(f"Neo4j build links error: {e}")
+
+
+def _recompute_communities():
+    """Label propagation community detection — writes community IDs back to nodes."""
+    driver = get_neo4j_driver()
+    if not driver:
+        return
+    try:
+        with driver.session(database=NEO4J_DB) as session:
+            edges_result = session.run("""
+                MATCH (a:File)-[r:SIMILAR_TO]->(b:File)
+                RETURN a.id AS src, b.id AS tgt, r.score AS score
+            """)
+            edges = [(r["src"], r["tgt"], r["score"]) for r in edges_result]
+
+            nodes_result = session.run("""
+                MATCH (f:File) WHERE f.embedding IS NOT NULL
+                RETURN f.id AS id
+            """)
+            node_ids = [r["id"] for r in nodes_result]
+
+        if not node_ids:
+            return
+
+        communities = label_propagation(node_ids, edges)
+        updates = [{"id": nid, "community": cid} for nid, cid in communities.items()]
+
+        with driver.session(database=NEO4J_DB) as session:
+            session.run("""
+                UNWIND $updates AS u
+                MATCH (f:File {id: u.id})
+                SET f.community = u.community
+            """, updates=updates)
+
+        num_communities = len(set(communities.values()))
+        print(f"  Communities recomputed: {num_communities} clusters across {len(node_ids)} nodes")
+
+    except Exception as e:
+        print(f"Community recompute error: {e}")
+
+
+def neo4j_get_graph() -> tuple[list[dict], list[dict]]:
+    """Return (nodes, links) enriched with community + degree data."""
+    driver = get_neo4j_driver()
+    if not driver:
+        return [], []
+    try:
+        with driver.session(database=NEO4J_DB) as session:
+            nodes_result = session.run("""
+                MATCH (f:File)
+                OPTIONAL MATCH (f)-[r:SIMILAR_TO]-()
+                RETURN f.id AS id, f.name AS name, f.path AS path,
+                       f.type AS type, f.size AS size, f.modified AS modified,
+                       f.ext AS ext, f.preview AS preview, f.color AS color,
+                       f.val AS baseVal, f.community AS community,
+                       f.embedding IS NOT NULL AS indexed,
+                       count(r) AS degree
+                ORDER BY f.type, f.name
+            """)
+            links_result = session.run("""
+                MATCH (a:File)-[r:SIMILAR_TO]->(b:File)
+                RETURN a.id AS source, b.id AS target, r.score AS value
+                ORDER BY r.score DESC
+            """)
+            nodes = [dict(r) for r in nodes_result]
+            links = [dict(r) for r in links_result]
+            return nodes, links
+    except Exception as e:
+        print(f"Neo4j get graph error: {e}")
+        return [], []
+
+
+# ── Embedding via Gemini ───────────────────────────────────────────────────────
+MAX_INLINE_MB = 5
+
+def embed(content, mime: str | None = None, task: str = "RETRIEVAL_DOCUMENT") -> list[float]:
     if isinstance(content, bytes) and mime:
         part = genai_types.Part.from_bytes(data=content, mime_type=mime)
         contents = [part]
     else:
         contents = str(content)[:8000]
-
     resp = _client.models.embed_content(
         model=EMBED_MODEL,
         contents=contents,
-        config=genai_types.EmbedContentConfig(
-            task_type=task,
-            output_dimensionality=EMBED_DIM,
-        ),
+        config=genai_types.EmbedContentConfig(task_type=task, output_dimensionality=EMBED_DIM),
     )
     return resp.embeddings[0].values
 
 
 def embed_file(path: str, ftype: str) -> tuple[list[float], str]:
-    """Return (embedding_vector, preview_text)."""
     p = Path(path)
     if not p.exists():
         return embed(f"File: {p.name}"), ""
-
-    ext = p.suffix.lstrip(".").lower()
+    ext  = p.suffix.lstrip(".").lower()
     name = p.name
 
-    # ── Folder ────────────────────────────────────────────────────────────────
     if ftype == "folder":
         text = f"Folder: {name}  Path: {path}"
         return embed(text), text
-
-    # ── Text / Code ───────────────────────────────────────────────────────────
     if ext in TEXT_EXTS:
         try:
             raw = p.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             return embed(f"File: {name}"), ""
         preview = raw[:300].replace("\n", " ").strip()
-        to_embed = f"{name}\n\n{raw[:8000]}"
-        return embed(to_embed), preview
-
-    # ── Images: send inline to gemini-embedding-2-preview ────────────────────
+        return embed(f"{name}\n\n{raw[:8000]}"), preview
     if ext in IMAGE_EXTS:
         if p.stat().st_size > MAX_INLINE_MB * 1024 * 1024:
             return embed(f"Image: {name}"), f"Image file: {name}"
         mime = mimetypes.guess_type(path)[0] or "image/jpeg"
-        data = p.read_bytes()
-        preview = f"[Image] {name}"
-        return embed(data, mime), preview
-
-    # ── PDFs: send inline ─────────────────────────────────────────────────────
+        return embed(p.read_bytes(), mime), f"[Image] {name}"
     if ext in PDF_EXTS:
         if p.stat().st_size > MAX_INLINE_MB * 1024 * 1024:
             return embed(f"PDF document: {name}"), f"PDF: {name}"
-        data = p.read_bytes()
-        return embed(data, "application/pdf"), f"[PDF] {name}"
-
-    # ── Audio: send inline ────────────────────────────────────────────────────
+        return embed(p.read_bytes(), "application/pdf"), f"[PDF] {name}"
     if ext in AUDIO_EXTS:
         if p.stat().st_size > MAX_INLINE_MB * 1024 * 1024:
             return embed(f"Audio file: {name}"), f"Audio: {name}"
         mime = mimetypes.guess_type(path)[0] or "audio/mpeg"
-        data = p.read_bytes()
-        return embed(data, mime), f"[Audio] {name}"
-
-    # ── Video: embed metadata (files are usually too large) ───────────────────
+        return embed(p.read_bytes(), mime), f"[Audio] {name}"
     if ext in VIDEO_EXTS:
         size_mb = p.stat().st_size / 1024 / 1024
         meta = f"Video file: {name}  Size: {size_mb:.1f}MB"
         return embed(meta), meta
 
-    # ── Other ─────────────────────────────────────────────────────────────────
     meta = f"File: {name}  Type: {ftype}  Size: {p.stat().st_size} bytes"
     return embed(meta), meta
 
 
-# ── Persistent index (written by index_desktop.py) ────────────────────────────
+# ── Persistent local index (fallback) ─────────────────────────────────────────
 INDEX_FILE = Path(__file__).parent / "index.json"
 
 def load_index() -> dict:
@@ -265,32 +479,52 @@ def load_index() -> dict:
             pass
     return {}
 
-# ── Flask app ─────────────────────────────────────────────────────────────────
+# ── Flask app ──────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 
 
 @app.route("/api/files")
 def api_files():
-    files = scan_dir(DESKTOP, 1)
-    # Merge in any pre-computed embeddings from index.json
+    files    = scan_dir(DESKTOP, 1)
+    file_ids = [f["id"] for f in files]
+
+    driver = get_neo4j_driver()
+    if driver:
+        try:
+            neo4j_upsert_files(files)
+            cached = neo4j_load_embeddings(file_ids)
+            for f in files:
+                if f["id"] in cached:
+                    c = cached[f["id"]]
+                    f["embedding"] = c["embedding"]
+                    f["preview"]   = c["preview"]
+                    if c["community"] is not None:
+                        f["community"] = c["community"]
+        except Exception as e:
+            print(f"Neo4j files error: {e}")
+            _merge_local_index(files)
+    else:
+        _merge_local_index(files)
+
+    return jsonify({"files": files, "total": len(files), "desktop": str(DESKTOP)})
+
+
+def _merge_local_index(files: list[dict]):
     index = load_index()
     for f in files:
         if f["id"] in index:
-            cached = index[f["id"]]
-            f["embedding"] = cached.get("embedding")
-            f["preview"]   = cached.get("preview", "")
-    return jsonify({"files": files, "total": len(files), "desktop": str(DESKTOP)})
+            f["embedding"] = index[f["id"]].get("embedding")
+            f["preview"]   = index[f["id"]].get("preview", "")
 
 
 @app.route("/api/embed", methods=["POST"])
 def api_embed():
-    body = request.get_json(force=True)
-    path = body.get("path", "")
-    ftype = body.get("type", "other")
-
-    # Query-text embedding for semantic search
+    body       = request.get_json(force=True)
+    path       = body.get("path", "")
+    ftype      = body.get("type", "other")
     query_text = body.get("queryText")
+
     if path == "__query__" and query_text:
         try:
             vec = embed(query_text, task="RETRIEVAL_QUERY")
@@ -300,9 +534,36 @@ def api_embed():
 
     try:
         vec, preview = embed_file(path, ftype)
+
+        # Persist + build graph links asynchronously
+        def _bg():
+            neo4j_save_embedding(path, vec, preview)
+            neo4j_build_links_for_node(path, vec)
+
+        threading.Thread(target=_bg, daemon=True).start()
+
         return jsonify({"embedding": vec, "preview": preview})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/graph")
+def api_graph():
+    """Full graph from Neo4j: nodes enriched with community + degree."""
+    nodes, links = neo4j_get_graph()
+    community_counts: dict[int, int] = defaultdict(int)
+    for n in nodes:
+        c = n.get("community")
+        if c is not None:
+            community_counts[int(c)] += 1
+
+    return jsonify({
+        "nodes":       nodes,
+        "links":       links,
+        "neo4j":       bool(nodes or links),
+        "communities": len(community_counts),
+        "total_links": len(links),
+    })
 
 
 @app.route("/api/open", methods=["POST"])
@@ -316,12 +577,19 @@ def api_open():
 
 @app.route("/api/health")
 def health():
-    return jsonify({"status": "ok", "model": EMBED_MODEL, "dim": EMBED_DIM})
+    return jsonify({
+        "status": "ok",
+        "model":  EMBED_MODEL,
+        "dim":    EMBED_DIM,
+        "neo4j":  get_neo4j_driver() is not None,
+    })
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
-    print(f"\n🧠 NeuralVault backend — {EMBED_MODEL} ({EMBED_DIM}d)")
+    print(f"\n🧠 NeuralVault")
+    print(f"   Model:   {EMBED_MODEL} ({EMBED_DIM}d)")
     print(f"   Desktop: {DESKTOP}")
-    print(f"   http://localhost:{port}/api/health\n")
+    get_neo4j_driver()
+    print(f"   Listening on http://localhost:{port}\n")
     app.run(port=port, debug=False)
