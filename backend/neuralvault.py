@@ -436,6 +436,21 @@ def embed(content, mime: str | None = None, task: str = "RETRIEVAL_DOCUMENT") ->
     return resp.embeddings[0].values
 
 
+def caption_image(data: bytes, mime: str, name: str) -> str:
+    """Use Gemini Flash to describe an image so it can be embedded as text."""
+    try:
+        part = genai_types.Part.from_bytes(data=data, mime_type=mime)
+        resp = _gen_client.models.generate_content(
+            model=GEN_MODEL,
+            contents=[part, "Describe this image in 1-2 sentences for search indexing. "
+                      "Focus on visible content: any text shown, people, objects, activities, setting."]
+        )
+        return f"{name}: {resp.text.strip()}"
+    except Exception as e:
+        print(f"caption_image error for {name}: {e}")
+        return f"Image: {name}"
+
+
 def embed_file(path: str, ftype: str) -> tuple[list[float], str]:
     p = Path(path)
     if not p.exists():
@@ -457,7 +472,9 @@ def embed_file(path: str, ftype: str) -> tuple[list[float], str]:
         if p.stat().st_size > MAX_INLINE_MB * 1024 * 1024:
             return embed(f"Image: {name}"), f"Image file: {name}"
         mime = mimetypes.guess_type(path)[0] or "image/jpeg"
-        return embed(p.read_bytes(), mime), f"[Image] {name}"
+        data = p.read_bytes()
+        caption = caption_image(data, mime, name)
+        return embed(caption), caption
     if ext in PDF_EXTS:
         if p.stat().st_size > MAX_INLINE_MB * 1024 * 1024:
             return embed(f"PDF document: {name}"), f"PDF: {name}"
