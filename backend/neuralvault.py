@@ -832,6 +832,52 @@ def api_graph():
     })
 
 
+@app.route("/api/cluster-labels", methods=["POST"])
+def api_cluster_labels():
+    """
+    Given communities (dict of communityId → list of {name, preview, type}),
+    ask Gemini to generate a short descriptive label for each cluster.
+    """
+    body = request.get_json(force=True)
+    communities = body.get("communities", {})  # {"0": [{name, preview, type}, ...], ...}
+    if not communities:
+        return jsonify({"labels": {}})
+
+    # Build prompt — sample up to 8 files per cluster to keep it concise
+    cluster_lines = []
+    for cid, files in communities.items():
+        sample = files[:8]
+        file_descs = []
+        for f in sample:
+            preview = f.get("preview", "").strip()[:80]
+            desc = f"{f['name']}"
+            if preview and not preview.lower().startswith(("file:", "image:", "video:", "audio:", "pdf:")):
+                desc += f" — {preview}"
+            file_descs.append(desc)
+        cluster_lines.append(f"Cluster {cid} ({len(files)} files, mostly {files[0].get('type','?')}):\n  " + "\n  ".join(file_descs))
+
+    prompt = (
+        "You are labeling clusters of related files found on someone's computer.\n"
+        "For each cluster, generate a short 2-4 word label that best describes the theme or topic.\n"
+        "Be specific and interesting — avoid generic labels like 'Various Files' or 'Mixed Content'.\n"
+        "Good examples: 'Database Coursework', 'Hawaii Trip', 'ML Research', 'Web Portfolio', 'Music Production'\n\n"
+        + "\n\n".join(cluster_lines)
+        + "\n\nReturn only JSON: {\"0\": \"label\", \"1\": \"label\", ...} — one entry per cluster, no explanation."
+    )
+
+    try:
+        resp = _gen_client.models.generate_content(model=GEN_MODEL, contents=prompt)
+        text = resp.text.strip()
+        import re as _re
+        m = _re.search(r'\{.*\}', text, _re.DOTALL)
+        if m:
+            return jsonify({"labels": json.loads(m.group())})
+    except Exception as e:
+        print(f"cluster-labels error: {e}")
+
+    return jsonify({"labels": {}})
+
+
 @app.route("/api/preview")
 def api_preview():
     """Serve raw file bytes for image/PDF inline preview in the browser."""

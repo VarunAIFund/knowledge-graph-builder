@@ -32,10 +32,23 @@ const TYPE_TO_TOPIC: Record<string, string> = {
 };
 
 function getTopicLabel(nodes: FileNode[]): string {
-  const counts: Record<string, number> = {};
-  for (const n of nodes) counts[n.type] = (counts[n.type] ?? 0) + 1;
-  const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
-  return TYPE_TO_TOPIC[dominant ?? "other"] ?? "Files";
+  // Use the most common top-level Desktop subfolder as the label
+  const segCounts: Record<string, number> = {};
+  for (const n of nodes) {
+    const parts = (n.path ?? "").split("/").filter(Boolean);
+    const desktopIdx = parts.indexOf("Desktop");
+    const seg = desktopIdx >= 0 && parts[desktopIdx + 1]
+      ? parts[desktopIdx + 1]
+      : parts[parts.length - 2];
+    if (seg) segCounts[seg] = (segCounts[seg] ?? 0) + 1;
+  }
+  const dominant = Object.entries(segCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (dominant) return dominant;
+  // Fallback to file type
+  const typeCounts: Record<string, number> = {};
+  for (const n of nodes) typeCounts[n.type] = (typeCounts[n.type] ?? 0) + 1;
+  const domType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+  return TYPE_TO_TOPIC[domType ?? "other"] ?? "Files";
 }
 
 function getCommunityColor(communityId: number | undefined, fileType: string): string {
@@ -61,6 +74,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
   const [hovered, setHovered] = useState<FileNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [labelItems, setLabelItems] = useState<LabelItem[]>([]);
+  const [aiLabels, setAiLabels] = useState<Map<number, string>>(new Map());
   const [dimensions, setDimensions] = useState({
     width: typeof window !== "undefined" ? window.innerWidth : 1200,
     height: typeof window !== "undefined" ? window.innerHeight : 800,
@@ -91,24 +105,31 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
     return map;
   }, [data.nodes]);
 
-  // Community → deduplicated topic label
-  const topicLabels = useMemo(() => {
-    const entries = Array.from(communities.entries())
-      .sort((a, b) => b[1].length - a[1].length);
-    const labelCount: Record<string, number> = {};
-    for (const [, nodes] of entries) {
-      const base = getTopicLabel(nodes);
-      labelCount[base] = (labelCount[base] ?? 0) + 1;
-    }
-    const labelSeen: Record<string, number> = {};
-    const result = new Map<number, string>();
-    for (const [cId, nodes] of entries) {
-      const base = getTopicLabel(nodes);
-      labelSeen[base] = (labelSeen[base] ?? 0) + 1;
-      result.set(cId, labelCount[base] > 1 ? `${base} ${labelSeen[base]}` : base);
-    }
-    return result;
+  // Fetch AI-generated cluster labels from Gemini when communities load
+  useEffect(() => {
+    if (communities.size === 0) return;
+    const payload: Record<string, { name: string; preview?: string; type: string }[]> = {};
+    communities.forEach((nodes, cId) => {
+      payload[String(cId)] = nodes.map(n => ({ name: n.name, preview: n.preview, type: n.type }));
+    });
+    fetch("/api/cluster-labels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ communities: payload }),
+    })
+      .then(r => r.json())
+      .then(({ labels }) => {
+        const map = new Map<number, string>();
+        for (const [k, v] of Object.entries(labels as Record<string, string>)) {
+          map.set(Number(k), v);
+        }
+        setAiLabels(map);
+      })
+      .catch(() => {});
   }, [communities]);
+
+  // Community → AI-generated label only
+  const topicLabels = useMemo(() => aiLabels, [aiLabels]);
 
   // Community → highest-degree node id
   const communityCenters = useMemo(() => {
@@ -200,7 +221,7 @@ export default function Graph3D({ data, onNodeClick, highlightIds }: Props) {
       const highDegree = (node.degree ?? 0) > 3;
 
       // Soft glow
-      if (highlighted || highDegree) {
+      if ((highlighted || highDegree) && isFinite(node.x) && isFinite(node.y)) {
         const glowRadius = radius * (highlighted ? 4 : 3);
         const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowRadius);
         gradient.addColorStop(0, hexToRgba(color, highlighted ? 0.35 : 0.2));
