@@ -31,6 +31,9 @@ for query in queries:
         continue
 
     results = resp.get("results", [])
+    sem_q   = resp.get("semantic_query", query)
+    tf      = resp.get("type_filter")
+    print(f"  semantic='{sem_q}'  type_filter={tf}")
     print(f"  method={resp.get('method')}  {len(results)} results\n")
     for r in results:
         name    = r.get("name","?")

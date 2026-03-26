@@ -23,6 +23,8 @@ from neo4j import GraphDatabase
 
 # ── Gemini client ──────────────────────────────────────────────────────────────
 _project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+_api_key  = os.environ.get("GEMINI_API_KEY")
+
 if _project:
     _client = genai.Client(
         vertexai=True,
@@ -31,13 +33,19 @@ if _project:
     )
     EMBED_MODEL = "gemini-embedding-2-preview"
 else:
-    _api_key = os.environ.get("GEMINI_API_KEY")
     if not _api_key:
         raise RuntimeError("Set GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT in backend/.env")
     _client = genai.Client(api_key=_api_key)
     EMBED_MODEL = "gemini-embedding-001"
 
+# Text generation always uses the API key client (Vertex AI project may lack generative model access)
+if _api_key:
+    _gen_client = genai.Client(api_key=_api_key)
+else:
+    _gen_client = _client  # fallback to same client
+
 EMBED_DIM = 3072
+GEN_MODEL = "gemini-2.0-flash"
 
 # ── File type mapping ──────────────────────────────────────────────────────────
 TEXT_EXTS = {
@@ -550,6 +558,40 @@ def api_embed():
         return jsonify({"error": str(e)}), 500
 
 
+def parse_query(query: str) -> dict:
+    """Use Gemini to extract semantic core + optional file type filter from a natural language query."""
+    prompt = (
+        'Extract from this file search query:\n'
+        '1. semantic_query: the core search intent (strip any file-type words)\n'
+        '2. type_filter: list of file types if the user hinted at a type, else null\n\n'
+        f'Query: "{query}"\n\n'
+        'Valid types: image, video, audio, pdf, text, code, other\n'
+        'Type hints: "image/photo/screenshot/picture" → ["image"], '
+        '"video/movie/clip/recording" → ["video"], '
+        '"audio/music/song" → ["audio"], '
+        '"pdf/document/doc/resume/report" → ["pdf","other"], '
+        '"code/script" → ["code"]\n\n'
+        'Respond with JSON only, no markdown:\n'
+        '{"semantic_query": "...", "type_filter": ["image"] or null}\n\n'
+        'Examples:\n'
+        '"schedule image" → {"semantic_query": "schedule", "type_filter": ["image"]}\n'
+        '"vacation photos" → {"semantic_query": "vacation", "type_filter": ["image"]}\n'
+        '"my resume" → {"semantic_query": "resume", "type_filter": null}\n'
+        '"sorting algorithm code" → {"semantic_query": "sorting algorithm", "type_filter": ["code"]}\n'
+        '"schedule" → {"semantic_query": "schedule", "type_filter": null}\n'
+    )
+    try:
+        resp = _gen_client.models.generate_content(model=GEN_MODEL, contents=prompt)
+        text = resp.text.strip()
+        import re as _re
+        m = _re.search(r'\{.*\}', text, _re.DOTALL)
+        if m:
+            return json.loads(m.group())
+    except Exception as e:
+        print(f"parse_query error: {e}")
+    return {"semantic_query": query, "type_filter": None}
+
+
 @app.route("/api/search", methods=["POST"])
 def api_search():
     """Embed query, compute cosine similarity against all stored embeddings, return ranked results."""
@@ -560,41 +602,28 @@ def api_search():
     if not query:
         return jsonify({"results": [], "method": "none"})
 
-    # Embed with SEMANTIC_SIMILARITY — works better cross-modally (text↔image)
+    # Use Gemini to understand query intent
+    parsed      = parse_query(query)
+    sem_query   = parsed.get("semantic_query") or query
+    type_filter = parsed.get("type_filter")  # e.g. ["image"] or None
+    print(f"Search: '{query}' → semantic='{sem_query}' types={type_filter}")
+
     try:
-        query_vec = embed(query, task="SEMANTIC_SIMILARITY")
+        query_vec = embed(sem_query, task="RETRIEVAL_QUERY")
     except Exception as e:
         return jsonify({"error": f"embed failed: {e}"}), 500
-
-    def _path_boost(path: str) -> float:
-        """Files on Desktop root rank higher than deeply nested project files."""
-        parts = path.replace(str(DESKTOP) + "/", "").split("/")
-        depth = len(parts)
-        if depth == 1:   return 1.20  # Desktop root (screenshots, docs dropped here)
-        if depth == 2:   return 1.05  # one subfolder deep
-        if depth <= 4:   return 1.00  # normal
-        return 0.88                   # deeply nested project files
 
     def _score_rows(rows):
         scored = []
         for row in rows:
+            if type_filter and row.get("type") not in type_filter:
+                continue
             emb = row.pop("embedding", None)
             if emb:
-                raw   = cosine_similarity_py(query_vec, list(emb))
-                boost = _path_boost(row.get("path", ""))
-                row["score"] = round(raw * boost, 4)
+                row["score"] = round(cosine_similarity_py(query_vec, list(emb)), 4)
                 scored.append(row)
-        # Return top-N per file type so images/audio/etc. aren't buried by text
-        by_type: dict[str, list] = {}
-        for r in scored:
-            by_type.setdefault(r.get("type", "other"), []).append(r)
-        per_type = max(5, limit // max(len(by_type), 1))
-        merged = []
-        for bucket in by_type.values():
-            bucket.sort(key=lambda x: x["score"], reverse=True)
-            merged.extend(bucket[:per_type])
-        merged.sort(key=lambda x: x["score"], reverse=True)
-        return merged[:limit]
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:limit]
 
     driver = get_neo4j_driver()
     if driver:
@@ -606,7 +635,8 @@ def api_search():
                            f.type AS type, f.ext AS ext, f.size AS size,
                            f.preview AS preview, f.embedding AS embedding
                 """).data()
-            return jsonify({"results": _score_rows(rows), "method": "embedding"})
+            return jsonify({"results": _score_rows(rows), "method": "embedding",
+                            "semantic_query": sem_query, "type_filter": type_filter})
         except Exception as e:
             print(f"Search error: {e}")
 
