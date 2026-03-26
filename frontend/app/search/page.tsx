@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Loader2, Network, X, ExternalLink, Sparkles } from "lucide-react";
 import type { FileNode } from "@/types";
 import { FILE_TYPE_COLORS, formatBytes } from "@/lib/utils";
-import { cosineSimilarity } from "@/lib/client-embed";
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
@@ -46,27 +45,21 @@ export default function SearchPage() {
     if (!q.trim()) { setResults([]); return; }
     setSearching(true);
     try {
-      const embedded = files.filter((f) => f.embedding);
-      if (embedded.length > 0) {
-        const res = await fetch("/api/embed", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: "__query__", type: "text", queryText: q }),
-        });
-        if (res.ok) {
-          const { embedding } = await res.json();
-          if (embedding) {
-            const scored = embedded
-              .map((f) => ({ file: f, score: cosineSimilarity(embedding, f.embedding!) }))
-              .filter((x) => x.score > 0.25)
-              .sort((a, b) => b.score - a.score);
-            if (scored.length > 0) {
-              setResults(scored.map((x) => x.file).slice(0, 20));
-              return;
-            }
-          }
+      // Server-side embedding search
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, limit: 20 }),
+      });
+      if (res.ok) {
+        const { results: hits } = await res.json();
+        if (hits?.length > 0) {
+          const fileMap = Object.fromEntries(files.map((f) => [f.id, f]));
+          setResults(hits.map((h: { id: string }) => fileMap[h.id] ?? h).filter(Boolean));
+          return;
         }
       }
+      // Fallback: filename match
       const lower = q.toLowerCase();
       setResults(files.filter((f) => f.name.toLowerCase().includes(lower)).slice(0, 20));
     } finally {

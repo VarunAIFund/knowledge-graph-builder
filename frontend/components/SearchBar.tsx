@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, X, Loader2, FileText, Image, Code, Film, Music, Folder, File, type LucideIcon } from "lucide-react";
 import type { FileNode } from "@/types";
 import { FILE_TYPE_COLORS } from "@/lib/utils";
-import { cosineSimilarity } from "@/lib/client-embed";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -72,29 +71,24 @@ export default function SearchBar({ files, onHighlight, onSelectFile }: Props) {
       }
       setLoading(true);
       try {
-        const embeddedFiles = files.filter((f) => f.embedding);
-        if (embeddedFiles.length > 0) {
-          const res = await fetch("/api/embed", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ path: "__query__", type: "text", queryText: q }),
-          });
-          if (res.ok) {
-            const { embedding } = await res.json();
-            if (embedding) {
-              const scored = embeddedFiles
-                .map((f) => ({ file: f, score: cosineSimilarity(embedding, f.embedding!) }))
-                .filter((x) => x.score > 0.35)
-                .sort((a, b) => b.score - a.score)
-                .slice(0, 10);
-              const found = scored.map((x) => x.file);
-              setResults(found);
-              onHighlight(new Set(found.map((f) => f.id)));
-              return;
-            }
+        // Server-side embedding search
+        const res = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q, limit: 10 }),
+        });
+        if (res.ok) {
+          const { results: hits } = await res.json();
+          if (hits?.length > 0) {
+            // Merge with local file objects so node clicks etc. still work
+            const fileMap = Object.fromEntries(files.map((f) => [f.id, f]));
+            const found: FileNode[] = hits.map((h: { id: string }) => fileMap[h.id] ?? h).filter(Boolean);
+            setResults(found);
+            onHighlight(new Set(found.map((f) => f.id)));
+            return;
           }
         }
-        // Fallback: fuzzy filename match
+        // Fallback: filename match
         const lower = q.toLowerCase();
         const found = files.filter((f) => f.name.toLowerCase().includes(lower)).slice(0, 10);
         setResults(found);

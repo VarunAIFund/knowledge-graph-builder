@@ -1,15 +1,11 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Zap, RefreshCw, Loader2, Network, Search,
-  FileText, Image, Code, Film, Music, Folder, File,
-  type LucideIcon,
-} from "lucide-react";
+import { Zap, RefreshCw, Loader2, Network, Search } from "lucide-react";
 import type { FileNode, GraphData } from "@/types";
-import { FILE_TYPE_COLORS, buildLinks } from "@/lib/utils";
+import { buildLinks } from "@/lib/utils";
 import FileDetails from "@/components/FileDetails";
 import SearchBar from "@/components/SearchBar";
 import { Button } from "@/components/ui/button";
@@ -23,11 +19,6 @@ const Graph3D = dynamic(() => import("@/components/Graph3D"), {
   ),
 });
 
-const TYPE_ICONS: Record<string, LucideIcon> = {
-  image: Image, text: FileText, code: Code, pdf: FileText,
-  video: Film, audio: Music, folder: Folder, other: File,
-};
-
 export default function Home() {
   const [files, setFiles]               = useState<FileNode[]>([]);
   const [graphData, setGraphData]       = useState<GraphData>({ nodes: [], links: [] });
@@ -38,7 +29,6 @@ export default function Home() {
   const [embeddingProgress, setEmbeddingProgress] = useState(0);
   const [embeddingCurrent, setEmbeddingCurrent]   = useState("");
   const [embeddedCount, setEmbeddedCount]         = useState(0);
-  const [filterType, setFilterType]     = useState<string | null>(null);
   const [neo4jConnected, setNeo4jConnected] = useState(false);
   const [communityCount, setCommunityCount] = useState(0);
   const filesRef = useRef<FileNode[]>([]);
@@ -141,23 +131,24 @@ export default function Home() {
     }, 3000);
   }, [isEmbedding]);
 
-  const filteredGraphData: GraphData = filterType
-    ? {
-        nodes: graphData.nodes.filter((n) => n.type === filterType),
-        links: graphData.links.filter((l) => {
-          const src = typeof l.source === "string" ? l.source : (l.source as FileNode).id;
-          const tgt = typeof l.target === "string" ? l.target : (l.target as FileNode).id;
-          const filtered = new Set(graphData.nodes.filter((n) => n.type === filterType).map((n) => n.id));
-          return filtered.has(src) && filtered.has(tgt);
-        }),
-      }
-    : graphData;
 
-  const typeCounts = files.reduce<Record<string, number>>((acc, f) => {
-    acc[f.type] = (acc[f.type] ?? 0) + 1;
-    return acc;
-  }, {});
   const embCount = files.filter((f) => f.embedding).length;
+
+  // Strip isolated nodes (no links = scattered dust, hard to read)
+  const displayData = useMemo<GraphData>(() => {
+    if (graphData.links.length === 0) return graphData;
+    const linked = new Set<string>();
+    for (const l of graphData.links) {
+      const src = typeof l.source === "string" ? l.source : (l.source as FileNode).id;
+      const tgt = typeof l.target === "string" ? l.target : (l.target as FileNode).id;
+      linked.add(src);
+      linked.add(tgt);
+    }
+    return {
+      nodes: graphData.nodes.filter((n) => linked.has(n.id)),
+      links: graphData.links,
+    };
+  }, [graphData]);
 
   return (
     <div className="app-bg w-screen h-screen">
@@ -286,80 +277,13 @@ export default function Home() {
       >
         {!loading && (
           <Graph3D
-            data={filteredGraphData}
+            data={displayData}
             onNodeClick={(node) => setSelectedFile(node)}
             highlightIds={highlightIds}
           />
         )}
       </div>
 
-      {/* ── Neo4j-style type legend — right side ────────────────────────── */}
-      {!loading && Object.keys(typeCounts).length > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            top: 72,
-            right: selectedFile ? 352 : 16,
-            zIndex: 30,
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-            transition: "right 0.32s cubic-bezier(0.32, 0.72, 0, 1)",
-          }}
-        >
-          {Object.entries(typeCounts)
-            .sort(([, a], [, b]) => b - a)
-            .map(([type, count]) => {
-              const color = FILE_TYPE_COLORS[type as keyof typeof FILE_TYPE_COLORS] ?? "#64748b";
-              const isActive = filterType === type;
-              return (
-                <button
-                  key={type}
-                  onClick={() => setFilterType(isActive ? null : type)}
-                  className="pressable"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "5px 14px 5px 10px",
-                    borderRadius: 20,
-                    background: `${color}18`,
-                    opacity: filterType && !isActive ? 0.3 : 1,
-                    border: isActive ? `1.5px solid ${color}` : `1.5px solid ${color}45`,
-                    cursor: "pointer",
-                    transition: "opacity 0.15s, border 0.15s, box-shadow 0.15s",
-                    boxShadow: isActive ? `0 0 14px ${color}35` : "none",
-                  }}
-                >
-                  <span
-                    style={{
-                      color: color,
-                      fontWeight: 700,
-                      fontSize: 12,
-                      fontFamily: "var(--font-space-mono)",
-                      minWidth: 20,
-                      textAlign: "right",
-                    }}
-                  >
-                    {count}
-                  </span>
-                  <span
-                    style={{
-                      color: color,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      fontFamily: "var(--font-outfit)",
-                      textTransform: "capitalize",
-                      opacity: 0.85,
-                    }}
-                  >
-                    {type}
-                  </span>
-                </button>
-              );
-            })}
-        </div>
-      )}
 
       {/* ── File details ────────────────────────────────────────────────── */}
       <AnimatePresence>

@@ -550,6 +550,78 @@ def api_embed():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/search", methods=["POST"])
+def api_search():
+    """Embed query, compute cosine similarity against all stored embeddings, return ranked results."""
+    body  = request.get_json(force=True)
+    query = body.get("query", "").strip()
+    limit = min(int(body.get("limit", 20)), 50)
+
+    if not query:
+        return jsonify({"results": [], "method": "none"})
+
+    # Embed with SEMANTIC_SIMILARITY — works better cross-modally (text↔image)
+    try:
+        query_vec = embed(query, task="SEMANTIC_SIMILARITY")
+    except Exception as e:
+        return jsonify({"error": f"embed failed: {e}"}), 500
+
+    def _path_boost(path: str) -> float:
+        """Files on Desktop root rank higher than deeply nested project files."""
+        parts = path.replace(str(DESKTOP) + "/", "").split("/")
+        depth = len(parts)
+        if depth == 1:   return 1.20  # Desktop root (screenshots, docs dropped here)
+        if depth == 2:   return 1.05  # one subfolder deep
+        if depth <= 4:   return 1.00  # normal
+        return 0.88                   # deeply nested project files
+
+    def _score_rows(rows):
+        scored = []
+        for row in rows:
+            emb = row.pop("embedding", None)
+            if emb:
+                raw   = cosine_similarity_py(query_vec, list(emb))
+                boost = _path_boost(row.get("path", ""))
+                row["score"] = round(raw * boost, 4)
+                scored.append(row)
+        # Return top-N per file type so images/audio/etc. aren't buried by text
+        by_type: dict[str, list] = {}
+        for r in scored:
+            by_type.setdefault(r.get("type", "other"), []).append(r)
+        per_type = max(5, limit // max(len(by_type), 1))
+        merged = []
+        for bucket in by_type.values():
+            bucket.sort(key=lambda x: x["score"], reverse=True)
+            merged.extend(bucket[:per_type])
+        merged.sort(key=lambda x: x["score"], reverse=True)
+        return merged[:limit]
+
+    driver = get_neo4j_driver()
+    if driver:
+        try:
+            with driver.session(database=NEO4J_DB) as session:
+                rows = session.run("""
+                    MATCH (f:File) WHERE f.embedding IS NOT NULL
+                    RETURN f.id AS id, f.name AS name, f.path AS path,
+                           f.type AS type, f.ext AS ext, f.size AS size,
+                           f.preview AS preview, f.embedding AS embedding
+                """).data()
+            return jsonify({"results": _score_rows(rows), "method": "embedding"})
+        except Exception as e:
+            print(f"Search error: {e}")
+
+    # Fallback: local index
+    index = load_index()
+    rows = [
+        {"id": fid, "name": d.get("name",""), "path": fid,
+         "type": d.get("type","other"), "ext": d.get("ext",""),
+         "size": d.get("size",0), "preview": d.get("preview",""),
+         "embedding": d.get("embedding")}
+        for fid, d in index.items() if d.get("embedding")
+    ]
+    return jsonify({"results": _score_rows(rows), "method": "embedding"})
+
+
 @app.route("/api/graph")
 def api_graph():
     """Full graph from Neo4j: nodes enriched with community + degree."""
